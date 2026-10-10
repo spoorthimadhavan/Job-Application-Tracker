@@ -78,6 +78,13 @@ Gmail and shown with their source. A row's email copy is shown in a sandboxed fr
    `https://<your-host>/api/auth/callback`
 4. Set env vars (see `.env.example`): `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SECRET_KEY`.
 
+## Welcome email (optional)
+After a Google sign-in the app can email the user a welcome message through [Resend](https://resend.com).
+1. Create a Resend account and an API key; verify a sending domain (the test sender `onboarding@resend.dev` only delivers to your own Resend account address).
+2. Set `RESEND_API_KEY` and `MAIL_FROM` (see `.env.example`). With no key, no email is sent.
+There is no database, so "first sign-in" means "this browser has no welcome marker cookie yet". A new browser or device sends it again.
+Email/password registration is not part of this app (login is Google only); it would need a database and is a good first contribution.
+
 ## Deploy
 Vercel: import the repo (or `docker compose up` anywhere), no framework preset needed (`vercel.json` builds `web/` and serves `api/`).
 Add the env vars above, then redeploy.

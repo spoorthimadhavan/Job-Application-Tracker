@@ -6,7 +6,7 @@ from datetime import date
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from . import auth, demo, gmail, settings
+from . import auth, demo, gmail, mailer, settings
 from .classify import build_applications, classify_message
 
 app = FastAPI(title="Job Application Tracker")
@@ -59,6 +59,9 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
     resp = RedirectResponse("/")
     _set_session(resp, tok, request)
     resp.delete_cookie(auth.STATE_COOKIE, path="/")
+    # No database, so "first sign-in" = this browser has no welcome marker yet
+    if request.cookies.get(mailer.WELCOME_COOKIE) != tok["email"] and await mailer.send_welcome(tok["email"]):
+        resp.set_cookie(mailer.WELCOME_COOKIE, tok["email"], httponly=True, secure=settings.COOKIE_SECURE, samesite="lax", max_age=60 * 60 * 24 * 365, path="/")
     return resp
 
 

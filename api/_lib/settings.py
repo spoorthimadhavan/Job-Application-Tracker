@@ -14,3 +14,7 @@ GOOGLE_CONFIGURED = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
 FERNET_KEY = base64.urlsafe_b64encode(hashlib.sha256(SECRET_KEY.encode()).digest())
 # An application with no reply after this many days counts as "rejected, no response"
 NO_RESPONSE_DAYS = 42
+# Welcome email (Resend, https://resend.com). Leave RESEND_API_KEY empty to disable emails.
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+# Must be an address on a domain you verified in Resend (the test sender onboarding@resend.dev only delivers to your own Resend account email)
+MAIL_FROM = os.getenv("MAIL_FROM", "Job Application Tracker <onboarding@resend.dev>")
