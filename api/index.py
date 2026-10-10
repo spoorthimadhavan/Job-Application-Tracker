@@ -2,20 +2,8 @@
 
 import pathlib
 import sys
-import traceback
 
-# Make `_lib` importable however the platform sets the working directory
+# Vercel does not put api/ on the import path, so add it before importing _lib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-try:
-    from _lib.main import app  # noqa: F401
-except Exception:  # surface startup errors in the response instead of an opaque 500 (temporary, while debugging the deploy)
-    _tb = traceback.format_exc()
-    print(_tb, file=sys.stderr)
-
-    async def app(scope, receive, send):  # minimal ASGI app
-        if scope["type"] != "http":
-            return
-        body = ("Startup error (temporary debug page):\n\n" + _tb).encode()
-        await send({"type": "http.response.start", "status": 500, "headers": [(b"content-type", b"text/plain; charset=utf-8")]})
-        await send({"type": "http.response.body", "body": body})
+from _lib.main import app  # noqa: E402,F401  (Vercel looks for a top-level `app`)
