@@ -61,3 +61,16 @@ async def test_access_token_without_refresh_token_is_401():
 
 def test_new_state_is_random():
     assert auth.new_state() != auth.new_state()
+
+
+def test_secret_key_is_derived_from_google_secret(monkeypatch):
+    import importlib
+
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "abc")
+    a = importlib.reload(settings).SECRET_KEY
+    assert a != "dev-only-change-me" and a == importlib.reload(settings).SECRET_KEY
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "")
+    assert importlib.reload(settings).SECRET_KEY == "dev-only-change-me"
+    monkeypatch.undo()
+    importlib.reload(settings)

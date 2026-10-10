@@ -17,7 +17,7 @@ The most useful contribution: **an email template the classifier gets wrong** (a
 
 `https://<your-project>.vercel.app` (add a link here after you deploy, and use **Try the demo** on the login page to look around without Google keys)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fspoorthimadhavan%2FJob-Application-Tracker&env=GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,SECRET_KEY&envDescription=Google%20OAuth%20keys%20and%20a%20long%20random%20string)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fspoorthimadhavan%2FJob-Application-Tracker&env=GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET&envDescription=Google%20OAuth%20client%20id%20and%20secret%20(one-time))
 
 ## Technologies
 | Layer | Tech |
@@ -112,7 +112,7 @@ Local env vars: for plain http set `COOKIE_SECURE=false` (Docker and the e2e tes
 | Name | Required | Meaning |
 |---|---|---|
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | for real login | from step 3 above |
-| `SECRET_KEY` | yes in production | long random string that encrypts the login cookie (`python -c "import secrets;print(secrets.token_urlsafe(48))"`) |
+| `SECRET_KEY` | no | optional; derived from the Google secret if empty. Long random string that encrypts the login cookie (`python -c "import secrets;print(secrets.token_urlsafe(48))"`) |
 | `REDIRECT_URI` | no | defaults to `https://<host>/api/auth/callback` |
 | `SINCE` | no | default start date, e.g. `2026/05/01` |
 | `COOKIE_SECURE` | no | `false` only for plain-http local runs |
@@ -122,7 +122,7 @@ Local env vars: for plain http set `COOKIE_SECURE=false` (Docker and the e2e tes
 1. Push your fork to GitHub.
 2. https://vercel.com/new > **Import** the repo (or click the Deploy button at the top). Leave the framework preset as **Other**;
    `vercel.json` already builds `web/` and serves `api/` as a Python function.
-3. Add the environment variables above (at least `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SECRET_KEY`) and click **Deploy**.
+3. Add the environment variables above (only `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are required) and click **Deploy**.
 4. Copy your production URL, add `https://<url>/api/auth/callback` as an authorized redirect URI in Google Cloud, and redeploy if you changed env vars.
 5. Visit the URL: **Try the demo** works immediately; **Sign in with Google** works once step 4 is done.
 6. Every push to `main` now deploys automatically; pull requests get preview URLs (CI must be green first).

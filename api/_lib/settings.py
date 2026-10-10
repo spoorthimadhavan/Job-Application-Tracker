@@ -1,10 +1,15 @@
 import base64
 import hashlib
+import hmac
 import os
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-only-change-me")
+# SECRET_KEY encrypts the login cookie. If you don't set one, derive a stable one from the Google client secret
+# (stable across serverless instances and restarts, and as secret as that value). Local runs fall back to a dev key.
+SECRET_KEY = os.getenv("SECRET_KEY") or (
+    hmac.new(GOOGLE_CLIENT_SECRET.encode(), b"jobtracker-session-key", hashlib.sha256).hexdigest() if GOOGLE_CLIENT_SECRET else "dev-only-change-me"
+)
 REDIRECT_URI = os.getenv("REDIRECT_URI", "")
 SINCE = os.getenv("SINCE", "2026/05/01")
 # Set COOKIE_SECURE=false only for plain-http local runs (Docker on a LAN IP, for example)
