@@ -1,0 +1,11 @@
+node_modules
+dist
+__pycache__
+.env
+.vercel
+.pytest_cache
+.ruff_cache
+.coverage
+coverage.xml
+web/playwright-report
+web/test-results

@@ -1,0 +1,12 @@
+services:
+  app:
+    build: .
+    ports: ["8000:8000"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      COOKIE_SECURE: "false"   # plain http on localhost; keep true in production
+      REDIRECT_URI: http://localhost:8000/api/auth/callback
+      SECRET_KEY: ${SECRET_KEY:-change-me-locally}
+    restart: unless-stopped
