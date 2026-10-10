@@ -1,8 +1,5 @@
 {
   "buildCommand": "cd web && npm install && npm run build",
   "outputDirectory": "web/dist",
-  "functions": {
-    "api/index.py": { "includeFiles": "api/_lib/**" }
-  },
   "rewrites": [{ "source": "/api/(.*)", "destination": "/api/index" }]
 }
