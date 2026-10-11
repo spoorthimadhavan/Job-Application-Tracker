@@ -4,7 +4,7 @@ export const PRESETS = [
   { id: "1w", label: "Last week" },
   { id: "2w", label: "Last 2 weeks" },
   { id: "1m", label: "Last month" },
-  { id: "3m", label: "Last quarter (3 months)" },
+  { id: "3m", label: "Last 3 months" },
   { id: "6m", label: "Last 6 months" },
   { id: "1y", label: "Last year" },
   { id: "all", label: "All time" },
