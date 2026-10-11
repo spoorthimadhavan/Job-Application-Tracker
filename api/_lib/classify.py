@@ -79,6 +79,10 @@ APPLICATION_CONTEXT = re.compile(
 )
 
 
+# Bump when the rules change: browsers keep classified mail and drop it when this differs.
+RULES_VERSION = "2026-10-11a"
+
+
 @dataclass
 class Event:
     company: str

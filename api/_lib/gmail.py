@@ -113,10 +113,10 @@ async def _fetch_many(c, ids: list[str], query: str, cache: dict, deadline, stat
     await asyncio.gather(*[run(g) for g in chunks])
 
 
-async def list_messages(token: str, since: str, limit: int = 500, deadline: float | None = None, stats: dict | None = None) -> list[dict]:
-    h = {"Authorization": f"Bearer {token}"}
+async def list_ids(token: str, since: str, limit: int = 1500) -> list[str]:
+    """Message ids matching the job query, newest first (ids only: cheap)."""
     ids, page = [], None
-    async with httpx.AsyncClient(timeout=30, headers=h) as c:
+    async with httpx.AsyncClient(timeout=30, headers={"Authorization": f"Bearer {token}"}) as c:
         while len(ids) < limit:
             params = {"q": QUERY.format(since=since), "maxResults": min(500, limit)}
             if page:
@@ -128,7 +128,12 @@ async def list_messages(token: str, since: str, limit: int = 500, deadline: floa
             page = data.get("nextPageToken")
             if not page:
                 break
-        ids = ids[:limit]
+    return ids[:limit]
+
+
+async def fetch_messages(token: str, ids: list[str], deadline: float | None = None, stats: dict | None = None) -> list[dict]:
+    """Sender, subject, preview, date and labels for these ids (Gmail batch, remembered per warm instance)."""
+    async with httpx.AsyncClient(timeout=30, headers={"Authorization": f"Bearer {token}"}) as c:
         await _fetch_many(c, ids, META, _CACHE, deadline, stats)
     return [
         {
@@ -142,6 +147,10 @@ async def list_messages(token: str, since: str, limit: int = 500, deadline: floa
         for i in ids
         if (m := _CACHE.get(i))
     ]
+
+
+async def list_messages(token: str, since: str, limit: int = 500, deadline: float | None = None, stats: dict | None = None) -> list[dict]:
+    return await fetch_messages(token, await list_ids(token, since, limit), deadline, stats)
 
 
 def _walk(part: dict, out: dict):

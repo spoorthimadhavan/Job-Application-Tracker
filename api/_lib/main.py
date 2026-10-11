@@ -1,13 +1,15 @@
 import os
 import re
 import time
+from dataclasses import asdict, fields
 from datetime import date
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
+from pydantic import BaseModel
 
 from . import auth, demo, gmail, mailer, settings
-from .classify import build_applications, classify_message, needs_body
+from .classify import RULES_VERSION, Event, build_applications, classify_message, needs_body
 
 app = FastAPI(title="Job Application Tracker")
 _cache: dict[str, tuple[float, dict]] = {}
@@ -145,6 +147,85 @@ async def email(message_id: str, request: Request):
         raise HTTPException(502, "Email could not be loaded") from None
 
 
+class ScanBody(BaseModel):
+    since: str
+    known: list[str] = []
+    version: str = ""
+    n: int = 80
+
+
+def _check_since(since: str) -> str:
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", since):
+        raise HTTPException(400, "since must be YYYY-MM-DD")
+    try:
+        if date.fromisoformat(since) > date.today():
+            raise HTTPException(400, "since is in the future")
+    except ValueError:
+        raise HTTPException(400, "since is not a date") from None
+    return since
+
+
+@app.post("/api/scan")
+async def scan(request: Request, body: ScanBody):
+    """One step of reading the mailbox: classify the next few mails the browser does not have yet.
+    Gmail allows only ~50 mails per second, so the browser loops over small steps and keeps the results."""
+    s = auth.require_session(request)
+    since = _check_since(body.since)
+    t0 = time.monotonic()
+    stats: dict = {}
+    if s.get("demo"):
+        pool = [m for m in demo.MESSAGES if m["date"][:10] >= since]
+        ids = [m["id"] for m in pool]
+    else:
+        token = await auth.access_token(s)
+        try:
+            ids = await gmail.list_ids(token, since.replace("-", "/"))
+        except Exception:
+            raise HTTPException(502, "Gmail could not be read right now") from None
+    known = set(body.known) if body.version == RULES_VERSION else set()
+    todo = [i for i in ids if i not in known]
+    chunk = todo[: max(10, min(body.n, 120))]
+    if s.get("demo"):
+        msgs = [m for m in pool if m["id"] in set(chunk)]
+    else:
+        try:
+            msgs = await gmail.fetch_messages(token, chunk, deadline=t0 + 6.0, stats=stats)
+            msgs = await gmail.enrich_truncated(token, msgs, needs_body, deadline=t0 + 8.0, stats=stats)
+        except Exception:
+            raise HTTPException(502, "Gmail could not be read right now") from None
+    events = {}
+    for m in msgs:
+        e = classify_message(m)
+        events[m["id"]] = asdict(e) if e else None
+    resp = JSONResponse({"version": RULES_VERSION, "events": events, "left": len(todo) - len(events), "total": len(ids)})
+    if s.get("access_token") and not s.get("demo"):
+        _set_session(resp, s)
+    return resp
+
+
+class BuildBody(BaseModel):
+    events: list[dict]
+
+
+@app.post("/api/build")
+async def build(request: Request, body: BuildBody):
+    """Group classified mails into one row per application."""
+    auth.require_session(request)
+    if len(body.events) > 5000:
+        raise HTTPException(400, "too many events")
+    names = {f.name for f in fields(Event)}
+    try:
+        events = [Event(**{k: v for k, v in e.items() if k in names}) for e in body.events]
+    except TypeError:
+        raise HTTPException(400, "bad event") from None
+    rows = build_applications(events)
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    return {"updated_at": time.time(), "counts": counts, "applications": rows}
+
+
+# Keep this LAST: the mount answers every path, so routes defined after it would never be reached.
 # Docker / local single-server mode: serve the built React app too. On Vercel the static files
 # come from the CDN and WEB_DIST is not set, so this does nothing there.
 if settings.WEB_DIST and os.path.isdir(settings.WEB_DIST):

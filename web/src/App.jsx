@@ -46,7 +46,7 @@ export default function App() {
   // switching between 1, 3 or 6 months is instant and every status is worked out from the same mail.
   const sixMonths = sinceFor("6m");
   const loadSince = since < sixMonths ? since : sixMonths;
-  const { data, error } = useApplications(signedIn, loadSince, onSignedOut);
+  const { data, error } = useApplications(signedIn, loadSince, onSignedOut, me && me.email);
   const merged = useMemo(
     () => applyOverrides((data ? data.applications : []).filter((a) => a.date >= since), overrides),
     [data, overrides, since]
@@ -75,7 +75,7 @@ export default function App() {
         onLogout={() => logout().then(() => setMe({ ...me, email: null }))}
       />
       {error && <p className="banner">{error}</p>}
-      {data && data.partial && <p className="banner">Still reading older mail, the list fills in as it goes…</p>}
+      {data && data.partial && <p className="banner">{data.progress ? `Reading your mailbox… ${data.progress.done} of ${data.progress.total} mails. The list fills in as it goes.` : "Still reading older mail…"}</p>}
       <StatTiles counts={merged.counts} total={apps.length} active={status} onPick={(s) => setStatus(status === s ? "all" : s)} />
       <Toolbar query={query} onQuery={setQuery} sort={sort} onSort={setSort} range={range} onRange={changeRange} memberSince={me.member_since} />
       <ApplicationList apps={shown} total={apps.length} loading={!data} docs={docs} onOpen={(a) => setOpen(a.id)} />

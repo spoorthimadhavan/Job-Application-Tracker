@@ -1,4 +1,5 @@
 import demo from "./demoData.js";
+import { scanApplications } from "./scan.js";
 
 // Demo build (no server): answer from the bundled sample mailbox, filtering by date like the API does.
 function demoRequest(path) {
@@ -26,6 +27,10 @@ async function request(path, options) {
 }
 
 export const getMe = () => request("/api/me");
-export const getApplications = (since) => request(`/api/applications?since=${encodeURIComponent(since)}`);
+const post = (path, body) =>
+  request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+export const getApplications = (since, opts = {}) =>
+  import.meta.env.VITE_DEMO ? request(`/api/applications?since=${encodeURIComponent(since)}`) : scanApplications(since, opts, post);
 export const getEmail = (id) => request(`/api/emails/${encodeURIComponent(id)}`);
 export const logout = () => request("/api/auth/logout", { method: "POST" });

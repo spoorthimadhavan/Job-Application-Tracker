@@ -37,9 +37,9 @@ describe("App", () => {
     signedIn();
     render(<App />);
     expect(await screen.findByText("Contoso")).toBeInTheDocument();
-    expect(api.getApplications).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/));
+    expect(api.getApplications).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), expect.anything());
     await userEvent.selectOptions(screen.getByLabelText("Look back"), "all");
-    await waitFor(() => expect(api.getApplications).toHaveBeenLastCalledWith("2004-01-01"));
+    await waitFor(() => expect(api.getApplications).toHaveBeenLastCalledWith("2004-01-01", expect.anything()));
   });
 
   it("filters by tile and by search text", async () => {

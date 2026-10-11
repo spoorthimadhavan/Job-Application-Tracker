@@ -139,3 +139,53 @@ def test_email_endpoint_real_path(client, monkeypatch):
 def test_email_bad_id_is_400(client):
     assert signed_in(client).get("/api/emails/..%2Fx").status_code in (400, 404)
     assert signed_in(client).get("/api/emails/ZZZZZZZZ").status_code == 400
+
+
+def test_scan_requires_login(client):
+    assert client.post("/api/scan", json={"since": "2026-05-01"}).status_code == 401
+    assert client.post("/api/build", json={"events": []}).status_code == 401
+
+
+def test_scan_steps_through_demo_mail_and_skips_known(demo_client):
+    first = demo_client.post("/api/scan", json={"since": "2004-01-01", "n": 10}).json()
+    assert len(first["events"]) == 10 and first["left"] == first["total"] - 10
+    again = demo_client.post("/api/scan", json={"since": "2004-01-01", "n": 500, "known": list(first["events"]), "version": first["version"]}).json()
+    assert not set(first["events"]) & set(again["events"]) and again["left"] == 0
+    stale = demo_client.post("/api/scan", json={"since": "2004-01-01", "n": 10, "known": list(first["events"]), "version": "old"}).json()
+    assert set(stale["events"]) == set(first["events"])  # rules changed: everything is read again
+
+
+def test_scan_and_build_match_the_one_shot_endpoint(demo_client):
+    scan = demo_client.post("/api/scan", json={"since": "2004-01-01", "n": 120}).json()
+    events = [e for e in scan["events"].values() if e]
+    built = demo_client.post("/api/build", json={"events": events}).json()
+    whole = demo_client.get("/api/applications?since=2004-01-01").json()
+    assert [(a["company"], a["status"]) for a in built["applications"]] == [(a["company"], a["status"]) for a in whole["applications"]]
+
+
+def test_scan_rejects_bad_since_and_build_rejects_bad_events(demo_client):
+    assert demo_client.post("/api/scan", json={"since": "yesterday"}).status_code == 400
+    assert demo_client.post("/api/build", json={"events": [{"nonsense": 1}]}).status_code == 400
+
+
+def test_scan_real_path_batches_and_classifies(client, monkeypatch):
+    async def ids(token, since, limit=1500):
+        return ["aa11bb22", "cc33dd44"]
+
+    async def fetch(token, chunk, deadline=None, stats=None):
+        return [
+            {
+                "id": i,
+                "sender": "jobs-noreply@linkedin.com",
+                "subject": "Your application to Dev at Foo GmbH",
+                "snippet": "",
+                "date": "2026-09-01T10:00:00+00:00",
+            }
+            for i in chunk
+        ]
+
+    monkeypatch.setattr(gmail, "list_ids", ids)
+    monkeypatch.setattr(gmail, "fetch_messages", fetch)
+    data = signed_in(client).post("/api/scan", json={"since": "2026-05-01"}).json()
+    assert list(data["events"]) == ["aa11bb22", "cc33dd44"] and data["left"] == 0 and data["total"] == 2
+    assert data["events"]["aa11bb22"]["company"] == "Foo GmbH"
