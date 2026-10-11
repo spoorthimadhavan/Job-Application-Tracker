@@ -61,6 +61,16 @@ CONDITIONAL_INVITE = re.compile(
     r"\b(sobald|falls|sofern|once|as soon as|if you are (selected|shortlisted)|bei interesse)\b[^.!?]{0,160}\b(einladung|invitation|invite|einladen)\b",
     re.I,
 )
+OFFER = re.compile(
+    r"\b(zusage|vertragsangebot|arbeitsvertrag|vertrag(sunterlagen)?|offer letter|job offer|employment contract|"
+    r"we('| a)re (pleased|happy|delighted) to offer|willkommen (bei|im team)|welcome aboard|onboarding|erster arbeitstag|first day)\b",
+    re.I,
+)
+OFFER_STRONG = re.compile(
+    r"(?<!keine )(?<!no )\b(zusage|vertragsangebot|arbeitsvertrag|offer letter|job offer|employment contract|"
+    r"we('| a)re (pleased|happy|delighted) to offer)\b",
+    re.I,
+)
 ACCOUNT = re.compile(r"account (wurde )?(erfolgreich )?(erstellt|created)|one-time passcode|konto.*erstellt", re.I)
 NOISE = re.compile(
     r"looking for candidates|job opportunities|is hiring|new jobs|job alert|newsletter|"
@@ -104,7 +114,7 @@ APPLICATION_CONTEXT = re.compile(
 
 
 # Bump when the rules change: browsers keep classified mail and drop it when this differs.
-RULES_VERSION = "2026-10-11g"
+RULES_VERSION = "2026-10-11h"
 
 
 @dataclass
@@ -120,6 +130,7 @@ class Event:
     subject: str
     sender: str = ""
     snippet: str = ""
+    offer: bool = False  # the mail is an offer, contract or onboarding: the job was won, so it never fades to "no response"
     weak: bool = False  # the company is only a guess (a person's name or a platform): may join a stronger match by role
 
 
@@ -365,9 +376,10 @@ def classify_message(m: dict) -> Event | None:
     preview = _clean(m.get("preview")) or snippet
 
     weak = False
+    offer = bool(OFFER.search(f"{subject} {snippet} {preview}"))
 
     def ev(company, role, status, note, source, check=False):
-        return Event(company.strip(" ."), role.strip(), status, day, note, check, mid, source, subject, _sender_display(sender), preview[:240], weak)
+        return Event(company.strip(" ."), role.strip(), status, day, note, check, mid, source, subject, _sender_display(sender), preview[:240], offer, weak)
 
     labels = set(m.get("labels") or [])
     if labels & SKIP_LABELS:  # your own sent mail, drafts, spam
@@ -441,6 +453,8 @@ def classify_message(m: dict) -> Event | None:
         reject = None  # a confirmation mail that only says "unfortunately we cannot answer everyone"
     if context and reject:
         return ev(company, role, "R", "Rejection email.", "email", True)
+    if context and OFFER_STRONG.search(blob) and not reject:
+        return ev(company, role, "S", "Job offer or contract.", "email", True)
     if context and INTERVIEW.search(blob) and not CONDITIONAL_INVITE.search(blob):
         return ev(company, role, "S", "Interview or next-step invite.", "email", True)
     if RECEIPT.search(blob):
@@ -571,7 +585,9 @@ def build_applications(events: list[Event], now: datetime | None = None) -> list
             age = (now - datetime.fromisoformat(last.date).replace(tzinfo=UTC)).days
             if age > NO_RESPONSE_DAYS:
                 status, note = "N", (note + " " if note else "") + f"No response after more than {NO_RESPONSE_DAYS // 7} weeks."
-        if status == "S":
+        # an offer or a long correspondence means the job was won: never fade it to "no response"
+        won = any(e.offer for e in evs if e.status == "S") or ((datetime.fromisoformat(last.date) - datetime.fromisoformat(evs[0].date)).days >= 45)
+        if status == "S" and not won:
             age = (now - datetime.fromisoformat(last.date).replace(tzinfo=UTC)).days
             if age > NO_RESPONSE_DAYS:  # interview or next step, then silence
                 status, note = "N", "Interview or next step, then no reply for more than " + f"{NO_RESPONSE_DAYS // 7} weeks."

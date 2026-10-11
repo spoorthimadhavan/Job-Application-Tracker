@@ -623,3 +623,17 @@ def test_person_name_sender_joins_bilingual_title_of_same_job():
     )
     rows = build_applications([a, b], NOW)
     assert len(rows) == 1 and rows[0]["status"] == "R"
+
+
+def test_an_offer_or_long_correspondence_never_fades_to_no_response():
+    a = classify_message(
+        m(
+            "jobs@acme-gmbh.de",
+            "Ihre Bewerbung - Zusage und Arbeitsvertrag",
+            "Wir freuen uns, Ihnen den Arbeitsvertrag zu senden. Bewerbung als Entwickler",
+            date="2023-01-10",
+            id="1",
+        )
+    )
+    assert a and a.status == "S" and a.offer
+    assert build_applications([a], NOW)[0]["status"] == "S"
