@@ -206,11 +206,14 @@ async def enrich_truncated(token: str, msgs: list[dict], needs_body, cap: int = 
         await _fetch_many(c, [m["id"] for m in todo], "format=full", _FULL, deadline, stats, chunk=20, parallel=4)
     for m in todo:
         m["preview"] = m["snippet"]
+        m["_need_body"] = True  # the caller must not trust this mail until the body was read
         if m["id"] in _BODY_CACHE:
             m["snippet"] = _BODY_CACHE[m["id"]]
+            m["_body_ok"] = True
         elif full := _FULL.pop(m["id"], None):
             out: dict = {}
             _walk(full.get("payload", {}), out)
             if text := _plain(out)[:1500]:
                 _BODY_CACHE[m["id"]] = m["snippet"] = text
+                m["_body_ok"] = True
     return msgs

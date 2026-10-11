@@ -3,7 +3,7 @@
 // 50 at a time; results stay in this browser, so later loads and the 30 s refresh only fetch what is new.
 const KEY = (email) => `jt-events:${email || ""}`;
 const STEP = 50;
-const PARALLEL = 3;
+const PARALLEL = 5;
 
 function load(email) {
   try {
@@ -56,7 +56,7 @@ export async function scanApplications(since, { email, onProgress, step = STEP, 
       }
       if (!ok) failed += chunk.length;
       save(email, store);
-      if (onProgress && next < chunks.length) building = building.then(async () => onProgress(await build(true)));
+      if (onProgress && next < chunks.length) building = building.then(async () => onProgress(await build(true))).catch(() => {}); // a failed preview must not stop the read
     }
   };
   await Promise.all(Array.from({ length: Math.min(parallel, chunks.length) }, worker));

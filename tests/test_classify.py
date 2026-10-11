@@ -304,3 +304,24 @@ def test_german_indeed_rejection_read_from_body():
     body = "Vielen Dank für Ihre Bewerbung als Mitarbeiter/in (m/w/d) für den Empfang bei Praxis X. Praxis X hat den nächsten Schritt im Bewerbungsprozess eingeleitet. Leider konnte Ihre Bewerbung dieses Mal nicht berücksichtigt werden."
     e = classify_message({**m("noreply@indeed.com", "Neuigkeiten zu Ihrer Bewerbung von Praxis X", body), "preview": body[:80]})
     assert e.status == "R" and e.snippet.startswith("Vielen Dank")
+
+
+def test_junk_is_never_used_as_job_title():
+    from _lib.classify import _role
+
+    for text in (
+        "Hallo Spoorthi Satish, vielen Dank für Dein Interesse an einer Karriere bei uns! Wir haben Deine Bewerbung als Softwareentwickler (m/w/d) erhalten und freuen uns",
+        "Thank you for applying to EvenUp! We will contact you as soon as possible and speak to the relevant department",
+    ):
+        assert not _role("Thanks for applying to EvenUp!", text).lower().startswith(("als", "applying", "soon"))
+    assert _role("", "Wir haben Deine Bewerbung als Softwareentwickler (m/w/d) erhalten und freuen uns") == "Softwareentwickler (m/w/d)"
+    assert (
+        _role("Thanks for applying to EvenUp!", "Thank you for applying to the Frontend Engineer, Growth & Agents role here at EvenUp! We've")
+        == "Frontend Engineer, Growth & Agents"
+    )
+    assert _role("Thanks", "Thank you for applying to the Backend Engineer position at Almedia") == "Backend Engineer"
+
+
+def test_mail_without_a_date_does_not_break_grouping():
+    e = classify_message({**m("jobs-noreply@linkedin.com", "Your application to Dev at Foo GmbH"), "date": ""})
+    assert e.date and build_applications([e], NOW)[0]["company"] == "Foo GmbH"

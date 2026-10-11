@@ -80,7 +80,7 @@ APPLICATION_CONTEXT = re.compile(
 
 
 # Bump when the rules change: browsers keep classified mail and drop it when this differs.
-RULES_VERSION = "2026-10-11a"
+RULES_VERSION = "2026-10-11b"
 
 
 @dataclass
@@ -121,7 +121,13 @@ ROLE_PATTERNS = (
     r"application (?:for|as)(?: the)?\s+(.+?)(?:\s+(?:at|with|position|role)\b|[.,]|$)",
     r"(?:for|as) the\s+(.+?)\s+(?:position|role)\b",
     r"role of\s+(.+?)\s+(?:with|at)\b",
-    r"(?:als|for|für)\s+(?:the\s+)?(.+?)(?:\s+(?:bei|at|position|role)\b|$)",
+    r"bewerbung als\s+(.+?)(?:\s+(?:bei|in|am|im|für)\b|\s+(?:erhalten|bekommen|eingegangen)\b|[!.,]|$)",
+    r"applying (?:to|for) the\s+(.+?)(?:\s+(?:position|role|at|here)\b|[.!]|$)",
+    r"position as(?: an?)?\s+(.+?)(?:\s+(?:at|with)\b|[.!,]|$)",
+)
+JUNK_ROLE = re.compile(
+    r"^(als|as|soon|applying|your|dein|ihre?|for|für|the|a)\b|as possible|erhalten|freuen|speak to|interest|interesse|thank|danke|!|^\W*$",
+    re.I,
 )
 
 
@@ -133,20 +139,25 @@ SUBJECT_ROLE_PATTERNS = (
 
 def _role(subject: str, snippet: str = "") -> str:
     for pat in SUBJECT_ROLE_PATTERNS:
-        if (x := re.search(pat, subject, re.I)) and 2 < len(r := x[1].strip(' .,:;-"')) <= 90:
+        if (x := re.search(pat, subject, re.I)) and 2 < len(r := x[1].strip(' .,:;-"')) <= 90 and not JUNK_ROLE.search(r):
             return r
     # specific patterns first, across both texts, so "Danke für dein Interesse" in a subject never beats the role in the body
     for pat in ROLE_PATTERNS:
         for text in (subject, snippet):
             if x := re.search(pat, text, re.I):
-                r = re.sub(r"\s+\d{6,}$", "", x[1].strip(" .,:;-"))
-                if 2 < len(r) <= 90 and not re.match(r"(dein|ihr|your|unser|our)\b", r, re.I):
+                r = re.sub(r"\s+\d{6,}$", "", x[1].strip(" .,:;-…"))
+                if 2 < len(r) <= 90 and not JUNK_ROLE.search(r):
                     return r
     return "Application"
 
 
 def _day(m: dict) -> str:
-    return (m.get("date") or "")[:10]
+    d = (m.get("date") or "")[:10]
+    try:
+        datetime.fromisoformat(d)
+        return d
+    except ValueError:  # a mail with no usable date must never break the list
+        return datetime.now(UTC).date().isoformat()
 
 
 GENERIC = re.compile(
@@ -306,6 +317,13 @@ def _norm(t: str) -> str:
 LOOSE_APPLICATION = re.compile(r"bewerbung|application|candidacy|candidature|applying", re.I)
 
 
+PLAIN_CONFIRMATION = re.compile(
+    r"eingegangen|eingangsbestätigung|received your (application|resume|cv)|we.ve received|erhalten haben|"
+    r"gerade haben wir (deine|ihre)|successfully (submitted|applied)|just received your",
+    re.I,
+)
+
+
 def needs_body(m: dict) -> bool:
     """True when the preview alone cannot give the verdict, so the mail body should be read."""
     sender, subject = (m.get("sender") or "").lower(), _clean(m.get("subject"))
@@ -317,6 +335,8 @@ def needs_body(m: dict) -> bool:
     ev = classify_message(m)
     if ev and ev.status not in ("A", "U"):
         return False
+    if ev and ev.source == "email" and PLAIN_CONFIRMATION.search(blob):
+        return False  # "we received your application": nothing more in the body that changes the status
     return bool(LOOSE_APPLICATION.search(blob))
 
 

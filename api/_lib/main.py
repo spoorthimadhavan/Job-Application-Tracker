@@ -205,6 +205,8 @@ async def scan(request: Request, body: ScanBody):
             raise HTTPException(502, "Gmail could not be read right now") from None
     events = {}
     for m in msgs:
+        if m.get("_need_body") and not m.get("_body_ok"):
+            continue  # the decision may be in the body we could not read yet: leave it out so the browser asks again
         e = classify_message(m)
         events[m["id"]] = asdict(e) if e else None
     resp = JSONResponse({"version": RULES_VERSION, "events": events})
@@ -228,7 +230,10 @@ async def build(request: Request, body: BuildBody):
         events = [Event(**{k: v for k, v in e.items() if k in names}) for e in body.events]
     except TypeError:
         raise HTTPException(400, "bad event") from None
-    rows = build_applications(events)
+    try:
+        rows = build_applications(events)
+    except Exception:
+        raise HTTPException(500, "could not group the applications") from None
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
