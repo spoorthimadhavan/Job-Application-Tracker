@@ -60,6 +60,12 @@ NOISE_SUBJECT = re.compile(r"digest|weekly problem|unsubscribe|webinar|your .{0,
 # Mail folders Gmail itself files as not-personal
 SKIP_LABELS = {"SENT", "DRAFT", "SPAM", "TRASH"}
 BULK_LABELS = {"CATEGORY_PROMOTIONS", "CATEGORY_FORUMS", "CATEGORY_SOCIAL"}
+PERSONAL_APPLICATION = re.compile(
+    r"(your|ihre|ihr|deine|dein)\s+(application|bewerbung|candidacy|candidature)|"
+    r"application\s+(for|to|as|status|was|has|process)|bewerbung\s+(als|auf|bei|für|zur|ist|wurde)|"
+    r"(thank you|thanks|danke).{0,20}(applying|application|bewerbung|interesse)",
+    re.I,
+)
 # The mail must talk about an application / position, not just mention a keyword
 APPLICATION_CONTEXT = re.compile(
     r"(your|ihre|ihr|deine|dein)\s+(application|bewerbung|candidacy|candidature)|"
@@ -172,9 +178,13 @@ def classify_message(m: dict) -> Event | None:
         return None
 
     blob = f"{subject} {snippet}"
-    if labels & BULK_LABELS or EDU_SENDER.search(low) or EDU.search(blob):
+    if EDU_SENDER.search(low) or EDU.search(blob):
         return None
     context = APPLICATION_CONTEXT.search(blob)
+    # Job mail often lands in Promotions/Updates/Social, so those tabs are scanned too, but only a
+    # clear statement about *your* application counts there (not "senior engineer" in a newsletter)
+    if labels & BULK_LABELS and not PERSONAL_APPLICATION.search(blob):
+        return None
     company = _company_from_sender(sender)
     role = (re.search(r"(?:als|for|für)\s+(?:the\s+)?(.+?)(?:\s+(?:bei|at|position|role)\b|$)", subject, re.I) or [None, "Application"])[1]
     role = role[:90]

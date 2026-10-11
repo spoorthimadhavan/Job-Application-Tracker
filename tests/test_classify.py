@@ -124,9 +124,14 @@ def test_sent_drafts_and_spam_labels_ignored():
         assert classify_message(ml("me@x.com", "Application for Software Engineer", "your application", [label])) is None
 
 
-def test_promotions_and_forums_ignored():
-    for label in ("CATEGORY_PROMOTIONS", "CATEGORY_FORUMS", "CATEGORY_SOCIAL"):
-        assert classify_message(ml("hr@acme.com", "Your application for Developer", "thanks for applying", [label])) is None
+def test_job_mail_in_promotions_updates_social_is_kept():
+    for label in ("CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_SOCIAL", "CATEGORY_FORUMS"):
+        e = classify_message(ml("hr@acme.com", "Your application for Backend Engineer", "We regret to inform you that we chose other candidates", [label]))
+        assert e is not None and e.status == "R"
+
+
+def test_newsletter_in_promotions_still_ignored():
+    assert classify_message(ml("jobs@board.com", "10 senior engineer roles this week", "senior developer position", ["CATEGORY_PROMOTIONS"])) is None
 
 
 def test_training_sales_ignored():
