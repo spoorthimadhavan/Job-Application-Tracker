@@ -102,6 +102,11 @@ async def _fetch_many(c, ids: list[str], query: str, cache: dict, deadline, stat
                     stats["partial"] = True
                 return
             got = await _fetch_chunk(c, group, query)
+            # Gmail answered "slow down" for some mails: wait a moment and ask for just those again, while there is time
+            again = [i for i in group if (got.get(i) or {}).get("_retry")]
+            if again and not (deadline and time.monotonic() + 2 > deadline):
+                await asyncio.sleep(1.2)
+                got.update(await _fetch_chunk(c, again, query))
         for i in group:
             v = got.get(i)
             if v and not v.get("_retry"):

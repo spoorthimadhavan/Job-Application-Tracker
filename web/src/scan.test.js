@@ -78,9 +78,9 @@ describe("scanApplications", () => {
     expect(built(calls)).toEqual(["b"]);
   });
 
-  it("retries a failed step once, then reports partial and keeps the rest", async () => {
+  it("retries a failed step, then reports partial and keeps the rest", async () => {
     let tries = 0;
-    const { post, calls } = server(["a", "b"], { a: ev("a"), b: ev("b") }, { fail: (b) => b.ids.includes("b") && ++tries <= 2 });
+    const { post, calls } = server(["a", "b"], { a: ev("a"), b: ev("b") }, { fail: (b) => b.ids.includes("b") && ++tries <= 3 });
     const out = await scanApplications("2026-05-01", { email: "u@x.com", step: 1, parallel: 1 }, post);
     expect(out.partial).toBe(true);
     expect(built(calls)).toEqual(["a"]);

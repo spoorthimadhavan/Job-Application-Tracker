@@ -6,7 +6,7 @@
 const KEY = (email) => `jt-events:${email || ""}`;
 const STEP = 50;
 const BODY_STEP = 15;
-const PARALLEL = 5;
+const PARALLEL = 4;
 
 function load(email) {
   try {
@@ -22,9 +22,23 @@ function save(email, store) {
   } catch { /* full or private mode: the next load just reads again */ }
 }
 
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// a short hiccup (Gmail slowing us down, a cold start) must not show an error: try a few times
+async function withRetry(fn, tries = 3) {
+  for (let n = 1; ; n++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (e.status === 401 || n >= tries) throw e;
+      await pause(600 * n);
+    }
+  }
+}
+
 export async function scanApplications(since, { email, onProgress, step = STEP, bodyStep = BODY_STEP, parallel = PARALLEL } = {}, post) {
   let store = load(email);
-  const listed = await post("/api/ids", { since });
+  const listed = await withRetry(() => post("/api/ids", { since }));
   if (listed.version !== store.version) store = { version: listed.version, events: {}, pending: {} }; // rules changed: start over
   const ids = listed.ids;
   const chunked = (list, n) => Array.from({ length: Math.ceil(list.length / n) }, (_, k) => list.slice(k * n, k * n + n));
@@ -35,7 +49,7 @@ export async function scanApplications(since, { email, onProgress, step = STEP, 
   let failed = 0;
   const windowEvents = () => Object.values(store.events).filter((e) => e && e.date >= since);
   const build = async (partial) => {
-    const built = await post("/api/build", { events: windowEvents() });
+    const built = await withRetry(() => post("/api/build", { events: windowEvents() }));
     return { ...built, since, partial, progress: { done, total, phase } };
   };
   let building = Promise.resolve();
@@ -49,7 +63,8 @@ export async function scanApplications(since, { email, onProgress, step = STEP, 
       while (next < chunks.length) {
         const chunk = chunks[next++];
         let ok = false;
-        for (let attempt = 0; attempt < 2 && !ok; attempt++) {
+        for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+          if (attempt) await pause(800 * attempt);
           try {
             const r = await post("/api/scan", { ids: chunk, bodies });
             Object.assign(store.events, r.events);

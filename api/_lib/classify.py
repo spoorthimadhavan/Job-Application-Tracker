@@ -43,7 +43,8 @@ RECEIPT = re.compile(
 )
 # "Sobald ... folgt ... die Einladung zu einem Interview" is a promise, not an invitation
 CONDITIONAL_INVITE = re.compile(
-    r"\b(sobald|falls|wenn|sofern|once|if|should|in case|as soon as)\b.{0,220}(einladung|interview|gespräch|invit|call)", re.I | re.S
+    r"\b(sobald|falls|sofern|once|as soon as|if you are (selected|shortlisted)|bei interesse)\b[^.!?]{0,160}\b(einladung|invitation|invite|einladen)\b",
+    re.I,
 )
 ACCOUNT = re.compile(r"account (wurde )?(erfolgreich )?(erstellt|created)|one-time passcode|konto.*erstellt", re.I)
 NOISE = re.compile(
@@ -85,7 +86,7 @@ APPLICATION_CONTEXT = re.compile(
 
 
 # Bump when the rules change: browsers keep classified mail and drop it when this differs.
-RULES_VERSION = "2026-10-11c"
+RULES_VERSION = "2026-10-11d"
 
 
 @dataclass

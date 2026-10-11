@@ -349,3 +349,14 @@ def test_recruitmail_company_from_text():
         m("noreply@recruitmail.com", "Eingangsbestätigung", "Vielen Dank für Ihre Bewerbung bei Rheinmetall. Wir haben Ihre Bewerbung erhalten.")
     )
     assert e.company == "Rheinmetall" and e.status == "A"
+
+
+def test_real_interview_invitation_still_selected():
+    e = classify_message(
+        m(
+            "hr@acme.com",
+            "Einladung zum Vorstellungsgespräch",
+            "Wir laden Sie zu einem Vorstellungsgespräch ein. Falls Sie Fragen haben, rufen Sie uns an. Your application: Software Engineer",
+        )
+    )
+    assert e.status == "S"
