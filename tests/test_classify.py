@@ -658,3 +658,15 @@ def test_marketing_about_job_offers_is_not_an_offer():
         )
     )
     assert b.status == "A"
+
+
+def test_polite_acknowledgement_titled_ihre_bewerbung_is_applied():
+    e = classify_message(
+        m(
+            "bewerbungen@betzemeier.de",
+            "Ihre Bewerbung als Softwareentwickler Frontend (m/w/d)",
+            "Sehr geehrte Frau Madhavan, wir freuen uns über Ihr Interesse an einer Tätigkeit bei uns und bedanken uns für Ihre Bewerbung. Bitte haben Sie Verständnis dafür, dass wir für eine Rückmeldung noch etwas",
+            date="2026-10-11",
+        )
+    )
+    assert e and e.status == "A" and e.company.lower().startswith("betzemeier")

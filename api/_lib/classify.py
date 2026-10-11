@@ -49,6 +49,7 @@ INTERVIEW = re.compile(
     re.I,
 )
 RECEIPT = re.compile(
+    r"(bedanken|danken) (wir )?uns? (ihnen )?für (ihre|deine|ihr)|freuen uns über (ihre|deine) bewerbung|interesse an einer tätigkeit|"
     r"application was sent|thank you.{0,20}for applying|for applying (for|to) the|thank you for (your )?appl|thanks for appl|"
     r"vielen dank für (ihre|deine) bewerbung|"
     r"eingangsbestätigung|we received your application|has been sent|bewerbung (ist )?eingegangen|"
@@ -66,6 +67,9 @@ OFFER_STRONG = re.compile(  # personal offer wording only: marketing mails talk 
     r"(pleased|happy|delighted) to offer you|offer you the (position|role|job)|ihnen (die stelle|den job) (anzubieten|zu(zu)?sagen))\b",
     re.I,
 )
+BEWERBUNG_SUBJECT = re.compile(
+    r"^(re:\s*)?(ihre|deine|your) (bewerbung|application)\b", re.I
+)  # a mail titled "Ihre Bewerbung als ..." is at least an acknowledgement
 ACCOUNT = re.compile(r"account (wurde )?(erfolgreich )?(erstellt|created)|one-time passcode|konto.*erstellt", re.I)
 NOISE = re.compile(
     r"bootcamp|download curriculum|industry-ready|masterclass|webinar|"
@@ -110,7 +114,7 @@ APPLICATION_CONTEXT = re.compile(
 
 
 # Bump when the rules change: browsers keep classified mail and drop it when this differs.
-RULES_VERSION = "2026-10-11i"
+RULES_VERSION = "2026-10-11j"
 
 
 @dataclass
@@ -453,7 +457,7 @@ def classify_message(m: dict) -> Event | None:
         return ev(company, role, "S", "Job offer or contract.", "email", True)
     if context and INTERVIEW.search(blob) and not CONDITIONAL_INVITE.search(blob):
         return ev(company, role, "S", "Interview or next-step invite.", "email", True)
-    if RECEIPT.search(blob):
+    if RECEIPT.search(blob) or (context and BEWERBUNG_SUBJECT.search(subject)):
         return ev(company, role, "A", "Receipt.", "email")
     if ACCOUNT.search(blob):
         return ev(company, "Role not named", "C", "Account created, application not sent.", "email")
