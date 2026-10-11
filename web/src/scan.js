@@ -31,7 +31,7 @@ async function withRetry(fn, tries = 3) {
       return await fn();
     } catch (e) {
       if (e.status === 401 || n >= tries) throw e;
-      await pause(600 * n);
+      await pause(1000 * n);
     }
   }
 }

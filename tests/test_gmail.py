@@ -202,3 +202,20 @@ async def test_list_messages_stops_at_deadline_and_reports_partial():
     finally:
         gmail.httpx.AsyncClient = orig
     assert out == [] and stats["partial"] is True
+
+
+@pytest.mark.asyncio
+async def test_rate_limited_get_is_retried(monkeypatch):
+    async def fast(_):
+        return None
+
+    monkeypatch.setattr(gmail.asyncio, "sleep", fast)
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(403 if len(calls) < 3 else 200, json={"messages": []})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+        r = await gmail._get(c, "https://example.test/messages")
+    assert r.status_code == 200 and len(calls) == 3

@@ -62,7 +62,7 @@ def _parse_batch(resp: httpx.Response, ids: list[str]) -> dict[str, dict | None]
             out[i] = json.loads(body[1]) if status and status.group(1) == "200" and len(body) > 1 else None
         except ValueError:
             out[i] = None
-        if status and status.group(1) in ("429", "500", "502", "503"):
+        if status and status.group(1) in ("403", "429", "500", "502", "503"):
             out[i] = {"_retry": True}
     return out
 
@@ -88,7 +88,7 @@ async def _fetch_chunk(c: httpx.AsyncClient, ids: list[str], query: str) -> dict
 
     async def one(i):
         r = await c.get(f"{API}/messages/{i}?{query}")
-        return i, (r.json() if r.status_code == 200 else ({"_retry": True} if r.status_code in (429, 500, 502, 503) else None))
+        return i, (r.json() if r.status_code == 200 else ({"_retry": True} if r.status_code in (403, 429, 500, 502, 503) else None))
 
     return dict(await asyncio.gather(*[one(i) for i in ids]))
 
@@ -122,6 +122,16 @@ async def _fetch_many(c, ids: list[str], query: str, cache: dict, deadline, stat
     await asyncio.gather(*[run(g) for g in chunks])
 
 
+async def _get(c: httpx.AsyncClient, url: str, params: dict | None = None) -> httpx.Response:
+    """GET with a short back-off: Gmail answers 403/429 (rate limit) while a big read is running."""
+    for n in range(4):
+        r = await c.get(url, params=params)
+        if r.status_code not in (403, 429, 500, 502, 503) or n == 3:
+            return r
+        await asyncio.sleep(0.6 * 2**n)
+    return r  # pragma: no cover
+
+
 async def list_ids(token: str, since: str, limit: int = 10000) -> list[str]:
     """Message ids matching the job query, newest first (ids only: cheap)."""
     ids, page = [], None
@@ -130,7 +140,7 @@ async def list_ids(token: str, since: str, limit: int = 10000) -> list[str]:
             params = {"q": QUERY.format(since=since), "maxResults": min(500, limit)}
             if page:
                 params["pageToken"] = page
-            r = await c.get(f"{API}/messages", params=params)
+            r = await _get(c, f"{API}/messages", params)
             r.raise_for_status()
             data = r.json()
             ids += [m["id"] for m in data.get("messages", [])]
@@ -175,7 +185,7 @@ async def get_message(token: str, msg_id: str) -> dict:
     if not re.fullmatch(r"[0-9a-f]{8,32}", msg_id):
         raise ValueError("bad id")
     async with httpx.AsyncClient(timeout=30, headers={"Authorization": f"Bearer {token}"}) as c:
-        r = await c.get(f"{API}/messages/{msg_id}", params={"format": "full"})
+        r = await _get(c, f"{API}/messages/{msg_id}", {"format": "full"})
         r.raise_for_status()
     m = r.json()
     out: dict = {}
