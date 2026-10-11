@@ -637,3 +637,24 @@ def test_an_offer_or_long_correspondence_never_fades_to_no_response():
     )
     assert a and a.status == "S" and a.offer
     assert build_applications([a], NOW)[0]["status"] == "S"
+
+
+def test_marketing_about_job_offers_is_not_an_offer():
+    a = classify_message(
+        m(
+            "hello@careercamp.codingninjas.com",
+            "Update: Confirm your application to build Data Science skills",
+            "Some professionals wait for one job offer. Others get to choose. Your application",
+            id="1",
+        )
+    )
+    assert a is None
+    b = classify_message(
+        m(
+            "sandvik@myworkday.com",
+            "Thank you for submitting your application for Frontend Software Engineer",
+            "Thank you for your application. You may receive a job offer later. Unfortunately we cannot answer everyone.",
+            id="2",
+        )
+    )
+    assert b.status == "A"
