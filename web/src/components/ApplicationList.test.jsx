@@ -7,7 +7,7 @@ import ApplicationList from "./ApplicationList.jsx";
 describe("ApplicationList", () => {
   it("renders one row per application with date, status and note", () => {
     render(<ApplicationList apps={apps} total={4} loading={false} docs={{}} onOpen={() => {}} />);
-    expect(screen.getAllByRole("button")).toHaveLength(4);
+    expect(screen.getAllByRole("row")).toHaveLength(5); // header + 4
     expect(screen.getByText("Wide World")).toBeInTheDocument();
     expect(screen.getByText("7 Oct 2026")).toBeInTheDocument();
     expect(screen.getByText("Selected")).toBeInTheDocument();
@@ -30,6 +30,26 @@ describe("ApplicationList", () => {
     render(<ApplicationList apps={apps} total={4} loading={false} docs={{}} onOpen={onOpen} />);
     await userEvent.click(screen.getByText("Contoso"));
     expect(onOpen).toHaveBeenCalledWith(apps[1]);
+  });
+
+  it("shows at most 10 rows per page and pages through the rest", async () => {
+    const many = Array.from({ length: 23 }, (_, i) => ({ ...apps[0], id: `x${i}`, company: `Co ${i}` }));
+    render(<ApplicationList apps={many} total={23} loading={false} docs={{}} onOpen={() => {}} />);
+    expect(screen.getAllByRole("row")).toHaveLength(11);
+    expect(screen.getByText("Page 1 of 3")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getAllByRole("row")).toHaveLength(4);
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+  });
+
+  it("opens a row from the keyboard", async () => {
+    const onOpen = vi.fn();
+    render(<ApplicationList apps={apps} total={4} loading={false} docs={{}} onOpen={onOpen} />);
+    screen.getAllByRole("row")[1].focus();
+    await userEvent.keyboard("{Enter}");
+    expect(onOpen).toHaveBeenCalledWith(apps[0]);
   });
 
   it("handles loading and empty results", () => {

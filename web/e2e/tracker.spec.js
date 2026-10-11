@@ -4,7 +4,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/");
   await page.getByRole("link", { name: "Try the demo" }).click();
   await expect(page.getByText("Demo data")).toBeVisible();
-  await expect(page.locator("button.row").first()).toBeVisible();
+  await expect(page.locator("tr.row").first()).toBeVisible();
 });
 
 test("signed-out visitors see the login page", async ({ browser }) => {
@@ -61,7 +61,7 @@ test("look-back offers the signup, months, years and custom choices", async ({ p
 });
 
 test("a row opens the email copy and Escape closes it", async ({ page }) => {
-  await page.locator("button.row").first().click();
+  await page.locator("tr.row").first().click();
   const drawer = page.getByRole("dialog", { name: "Email" });
   await expect(drawer).toBeVisible();
   await expect(drawer.locator("section.mail")).toBeVisible();
@@ -70,15 +70,15 @@ test("a row opens the email copy and Escape closes it", async ({ page }) => {
 });
 
 test("a resume can be attached to a job and survives a reload", async ({ page }) => {
-  await page.locator("button.row").first().click();
+  await page.locator("tr.row").first().click();
   const drawer = page.getByRole("dialog", { name: "Email" });
   await drawer.locator("input[type=file]").first().setInputFiles({ name: "my-cv.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 test") });
   await expect(drawer.getByText(/my-cv\.pdf/)).toBeVisible();
   await drawer.getByRole("button", { name: "Close" }).click();
-  await expect(page.locator("button.row .clip").first()).toBeVisible();
+  await expect(page.locator("tr.row .clip").first()).toBeVisible();
 
   await page.reload();
-  await expect(page.locator("button.row .clip").first()).toBeVisible();
+  await expect(page.locator("tr.row .clip").first()).toBeVisible();
 });
 
 test("signing out returns to the login page", async ({ page }) => {

@@ -61,7 +61,7 @@ describe("App", () => {
     render(<App />);
     await screen.findByText("Contoso");
     await userEvent.selectOptions(screen.getByLabelText("Sort"), "company");
-    const names = screen.getAllByRole("button").filter((b) => b.className === "row").map((b) => within(b).getByText(/Contoso|Northwind|Tailspin|Wide World/).textContent);
+    const names = screen.getAllByRole("row").filter((b) => b.className === "row").map((b) => within(b).getByText(/Contoso|Northwind|Tailspin|Wide World/).textContent);
     expect(names).toEqual(["Contoso", "Northwind Labs", "Tailspin Toys", "Wide World"]);
   });
 
