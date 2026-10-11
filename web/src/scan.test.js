@@ -3,63 +3,80 @@ import { scanApplications } from "./scan.js";
 
 const ev = (id, date = "2026-09-01") => ({ message_id: id, date, status: "R", company: "C" + id });
 
-function server(batches) {
+// ids: what the server lists; events: what each scanned id turns into (null = not a job mail)
+function server(ids, events, { version = "v1", fail = () => false } = {}) {
   const calls = [];
   const post = vi.fn(async (path, body) => {
     calls.push([path, body]);
+    if (path === "/api/ids") return { version, ids };
     if (path === "/api/build") return { counts: {}, applications: body.events.map((e) => ({ id: e.message_id })) };
-    const next = batches.shift();
-    return { version: "v1", total: 4, ...next };
+    if (fail(body)) throw new Error("boom");
+    return { version, events: Object.fromEntries(body.ids.map((i) => [i, events[i] ?? null])) };
   });
   return { post, calls };
 }
+const scanned = (calls) => calls.filter(([p]) => p === "/api/scan").flatMap(([, b]) => b.ids);
+const built = (calls) => calls.filter(([p]) => p === "/api/build").at(-1)[1].events.map((e) => e.message_id).sort();
 
 describe("scanApplications", () => {
   beforeEach(() => localStorage.clear());
 
-  it("loops over steps, shows progress and returns the built list", async () => {
-    const { post } = server([{ events: { a: ev("a"), b: null }, left: 2 }, { events: { c: ev("c"), d: ev("d") }, left: 0 }]);
+  it("reads the ids in small steps and builds the list", async () => {
+    const { post, calls } = server(["a", "b", "c", "d", "e"], { a: ev("a"), c: ev("c"), e: ev("e") });
     const progress = vi.fn();
-    const out = await scanApplications("2026-05-01", { email: "u@x.com", onProgress: progress }, post);
-    expect(progress).toHaveBeenCalledTimes(1);
+    const out = await scanApplications("2026-05-01", { email: "u@x.com", step: 2, parallel: 2, onProgress: progress }, post);
+    expect(scanned(calls).sort()).toEqual(["a", "b", "c", "d", "e"]);
+    expect(calls.filter(([p]) => p === "/api/scan").every(([, b]) => b.ids.length <= 2)).toBe(true);
+    expect(progress).toHaveBeenCalled();
     expect(progress.mock.calls[0][0].partial).toBe(true);
     expect(out.partial).toBe(false);
-    expect(out.applications.map((a) => a.id)).toEqual(["a", "c", "d"]);
+    expect(out.applications.map((a) => a.id).sort()).toEqual(["a", "c", "e"]);
+    expect(out.progress).toEqual({ done: 5, total: 5 });
   });
 
-  it("remembers mail in the browser and only asks for what is new", async () => {
-    const first = server([{ events: { a: ev("a"), b: null }, left: 0 }]);
-    await scanApplications("2026-05-01", { email: "u@x.com" }, first.post);
-    const second = server([{ events: { c: ev("c") }, left: 0 }]);
+  it("remembers mail in the browser and only reads what is new", async () => {
+    await scanApplications("2026-05-01", { email: "u@x.com" }, server(["a", "b"], { a: ev("a") }).post);
+    const second = server(["a", "b", "c"], { c: ev("c") });
     await scanApplications("2026-05-01", { email: "u@x.com" }, second.post);
-    const scanBody = second.calls.find(([p]) => p === "/api/scan")[1];
-    expect(scanBody.known.sort()).toEqual(["a", "b"]);
-    const built = second.calls.find(([p]) => p === "/api/build")[1];
-    expect(built.events.map((e) => e.message_id).sort()).toEqual(["a", "c"]);
+    expect(scanned(second.calls)).toEqual(["c"]);
+    expect(built(second.calls)).toEqual(["a", "c"]);
   });
 
   it("starts over when the server rules changed and keeps accounts apart", async () => {
-    await scanApplications("2026-05-01", { email: "u@x.com" }, server([{ events: { a: ev("a") }, left: 0 }]).post);
-    const s = server([{ version: "v2", events: { z: ev("z") }, left: 0 }]);
+    await scanApplications("2026-05-01", { email: "u@x.com" }, server(["a"], { a: ev("a") }).post);
+    const s = server(["a", "z"], { a: ev("a"), z: ev("z") }, { version: "v2" });
     await scanApplications("2026-05-01", { email: "u@x.com" }, s.post);
-    expect(s.calls.find(([p]) => p === "/api/build")[1].events.map((e) => e.message_id)).toEqual(["z"]);
-    const other = server([{ events: { q: ev("q") }, left: 0 }]);
+    expect(scanned(s.calls).sort()).toEqual(["a", "z"]);
+    const other = server(["q"], { q: ev("q") });
     await scanApplications("2026-05-01", { email: "other@x.com" }, other.post);
-    expect(other.calls.find(([p]) => p === "/api/scan")[1].known).toEqual([]);
+    expect(built(other.calls)).toEqual(["q"]);
   });
 
   it("cuts the list to the chosen start date", async () => {
-    const { post, calls } = server([{ events: { a: ev("a", "2026-03-01"), b: ev("b", "2026-08-01") }, left: 0 }]);
+    const { post, calls } = server(["a", "b"], { a: ev("a", "2026-03-01"), b: ev("b", "2026-08-01") });
     await scanApplications("2026-05-01", { email: "u@x.com" }, post);
-    expect(calls.find(([p]) => p === "/api/build")[1].events.map((e) => e.message_id)).toEqual(["b"]);
+    expect(built(calls)).toEqual(["b"]);
   });
 
-  it("gives up after repeated empty steps and reports partial", async () => {
-    vi.useFakeTimers();
-    const { post } = server([{ events: {}, left: 3 }, { events: {}, left: 3 }, { events: {}, left: 3 }]);
-    const p = scanApplications("2026-05-01", { email: "u@x.com" }, post);
-    await vi.runAllTimersAsync();
-    expect((await p).partial).toBe(true);
-    vi.useRealTimers();
+  it("retries a failed step once, then reports partial and keeps the rest", async () => {
+    let tries = 0;
+    const { post, calls } = server(["a", "b"], { a: ev("a"), b: ev("b") }, { fail: (b) => b.ids.includes("b") && ++tries <= 2 });
+    const out = await scanApplications("2026-05-01", { email: "u@x.com", step: 1, parallel: 1 }, post);
+    expect(out.partial).toBe(true);
+    expect(built(calls)).toEqual(["a"]);
+    const again = server(["a", "b"], { b: ev("b") });
+    const ok = await scanApplications("2026-05-01", { email: "u@x.com" }, again.post);
+    expect(scanned(again.calls)).toEqual(["b"]);
+    expect(ok.partial).toBe(false);
+  });
+
+  it("passes a signed-out error up", async () => {
+    const post = vi.fn(async (path) => {
+      if (path === "/api/ids") return { version: "v1", ids: ["a"] };
+      const e = new Error("signed-out");
+      e.status = 401;
+      throw e;
+    });
+    await expect(scanApplications("2026-05-01", { email: "u@x.com" }, post)).rejects.toMatchObject({ status: 401 });
   });
 });

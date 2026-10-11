@@ -142,33 +142,30 @@ def test_email_bad_id_is_400(client):
 
 
 def test_scan_requires_login(client):
-    assert client.post("/api/scan", json={"since": "2026-05-01"}).status_code == 401
+    assert client.post("/api/ids", json={"since": "2026-05-01"}).status_code == 401
+    assert client.post("/api/scan", json={"ids": []}).status_code == 401
     assert client.post("/api/build", json={"events": []}).status_code == 401
 
 
-def test_scan_steps_through_demo_mail_and_skips_known(demo_client):
-    first = demo_client.post("/api/scan", json={"since": "2004-01-01", "n": 10}).json()
-    assert len(first["events"]) == 10 and first["left"] == first["total"] - 10
-    again = demo_client.post("/api/scan", json={"since": "2004-01-01", "n": 500, "known": list(first["events"]), "version": first["version"]}).json()
-    assert not set(first["events"]) & set(again["events"]) and again["left"] == 0
-    stale = demo_client.post("/api/scan", json={"since": "2004-01-01", "n": 10, "known": list(first["events"]), "version": "old"}).json()
-    assert set(stale["events"]) == set(first["events"])  # rules changed: everything is read again
-
-
-def test_scan_and_build_match_the_one_shot_endpoint(demo_client):
-    scan = demo_client.post("/api/scan", json={"since": "2004-01-01", "n": 120}).json()
-    events = [e for e in scan["events"].values() if e]
-    built = demo_client.post("/api/build", json={"events": events}).json()
+def test_ids_then_scan_in_chunks_matches_the_one_shot_endpoint(demo_client):
+    listed = demo_client.post("/api/ids", json={"since": "2004-01-01"}).json()
+    ids = listed["ids"]
+    assert len(ids) > 5 and listed["version"]
+    events = {}
+    for n in range(0, len(ids), 7):
+        events.update(demo_client.post("/api/scan", json={"ids": ids[n : n + 7]}).json()["events"])
+    assert set(events) == set(ids)
+    built = demo_client.post("/api/build", json={"events": [e for e in events.values() if e]}).json()
     whole = demo_client.get("/api/applications?since=2004-01-01").json()
     assert [(a["company"], a["status"]) for a in built["applications"]] == [(a["company"], a["status"]) for a in whole["applications"]]
 
 
-def test_scan_rejects_bad_since_and_build_rejects_bad_events(demo_client):
-    assert demo_client.post("/api/scan", json={"since": "yesterday"}).status_code == 400
+def test_ids_rejects_bad_since_and_build_rejects_bad_events(demo_client):
+    assert demo_client.post("/api/ids", json={"since": "yesterday"}).status_code == 400
     assert demo_client.post("/api/build", json={"events": [{"nonsense": 1}]}).status_code == 400
 
 
-def test_scan_real_path_batches_and_classifies(client, monkeypatch):
+def test_scan_real_path_uses_batch_fetch(client, monkeypatch):
     async def ids(token, since, limit=1500):
         return ["aa11bb22", "cc33dd44"]
 
@@ -186,6 +183,7 @@ def test_scan_real_path_batches_and_classifies(client, monkeypatch):
 
     monkeypatch.setattr(gmail, "list_ids", ids)
     monkeypatch.setattr(gmail, "fetch_messages", fetch)
-    data = signed_in(client).post("/api/scan", json={"since": "2026-05-01"}).json()
-    assert list(data["events"]) == ["aa11bb22", "cc33dd44"] and data["left"] == 0 and data["total"] == 2
-    assert data["events"]["aa11bb22"]["company"] == "Foo GmbH"
+    c = signed_in(client)
+    assert c.post("/api/ids", json={"since": "2026-05-01"}).json()["ids"] == ["aa11bb22", "cc33dd44"]
+    data = c.post("/api/scan", json={"ids": ["aa11bb22", "cc33dd44"]}).json()
+    assert data["events"]["aa11bb22"]["company"] == "Foo GmbH" and len(data["events"]) == 2

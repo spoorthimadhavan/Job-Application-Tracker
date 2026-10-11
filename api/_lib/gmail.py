@@ -13,8 +13,9 @@ import httpx
 
 API = "https://gmail.googleapis.com/gmail/v1/users/me"
 QUERY = (
-    "after:{since} (Bewerbung OR application OR candidacy OR Absage OR interview OR "
-    'Vorstellungsgespräch OR "your application" OR Neuigkeiten OR "thank you for applying") '
+    "after:{since} (subject:(Bewerbung OR Bewerbungen OR application OR candidacy OR candidature OR Absage OR interview OR "
+    'Vorstellungsgespräch OR Neuigkeiten OR Interesse OR interest OR "your process" OR Eingangsbestätigung OR Rückmeldung OR feedback OR Zusage) '
+    'OR "thank you for applying" OR "regret to inform" OR "move forward with other" OR (leider Bewerbung)) '
     "-in:sent -in:drafts -from:(jobalerts-noreply@linkedin.com OR jobalert.indeed.com OR match.indeed.com OR "
     "jobagent.stepstone.de OR noreply@github.com OR notifications@github.com OR notifications@vercel.com OR glassdoor.com)"
 )

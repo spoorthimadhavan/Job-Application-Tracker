@@ -147,11 +147,8 @@ async def email(message_id: str, request: Request):
         raise HTTPException(502, "Email could not be loaded") from None
 
 
-class ScanBody(BaseModel):
+class IdsBody(BaseModel):
     since: str
-    known: list[str] = []
-    version: str = ""
-    n: int = 80
 
 
 def _check_since(since: str) -> str:
@@ -165,29 +162,42 @@ def _check_since(since: str) -> str:
     return since
 
 
-@app.post("/api/scan")
-async def scan(request: Request, body: ScanBody):
-    """One step of reading the mailbox: classify the next few mails the browser does not have yet.
-    Gmail allows only ~50 mails per second, so the browser loops over small steps and keeps the results."""
+@app.post("/api/ids")
+async def ids(request: Request, body: IdsBody):
+    """Ids of all job-related mails since a date (cheap: ids only). The browser then reads them in small steps."""
     s = auth.require_session(request)
     since = _check_since(body.since)
-    t0 = time.monotonic()
-    stats: dict = {}
     if s.get("demo"):
-        pool = [m for m in demo.MESSAGES if m["date"][:10] >= since]
-        ids = [m["id"] for m in pool]
+        found = [m["id"] for m in demo.MESSAGES if m["date"][:10] >= since]
     else:
         token = await auth.access_token(s)
         try:
-            ids = await gmail.list_ids(token, since.replace("-", "/"))
+            found = await gmail.list_ids(token, since.replace("-", "/"))
         except Exception:
             raise HTTPException(502, "Gmail could not be read right now") from None
-    known = set(body.known) if body.version == RULES_VERSION else set()
-    todo = [i for i in ids if i not in known]
-    chunk = todo[: max(10, min(body.n, 120))]
+    resp = JSONResponse({"version": RULES_VERSION, "ids": found})
+    if s.get("access_token") and not s.get("demo"):
+        _set_session(resp, s)
+    return resp
+
+
+class ScanBody(BaseModel):
+    ids: list[str]
+
+
+@app.post("/api/scan")
+async def scan(request: Request, body: ScanBody):
+    """Classify one small batch of mails. Gmail allows only ~50 mails per second, so the browser calls this
+    for a few ids at a time (in parallel) and keeps the results."""
+    s = auth.require_session(request)
+    chunk = body.ids[:60]
+    t0 = time.monotonic()
+    stats: dict = {}
     if s.get("demo"):
-        msgs = [m for m in pool if m["id"] in set(chunk)]
+        wanted = set(chunk)
+        msgs = [m for m in demo.MESSAGES if m["id"] in wanted]
     else:
+        token = await auth.access_token(s)
         try:
             msgs = await gmail.fetch_messages(token, chunk, deadline=t0 + 6.0, stats=stats)
             msgs = await gmail.enrich_truncated(token, msgs, needs_body, deadline=t0 + 8.0, stats=stats)
@@ -197,7 +207,7 @@ async def scan(request: Request, body: ScanBody):
     for m in msgs:
         e = classify_message(m)
         events[m["id"]] = asdict(e) if e else None
-    resp = JSONResponse({"version": RULES_VERSION, "events": events, "left": len(todo) - len(events), "total": len(ids)})
+    resp = JSONResponse({"version": RULES_VERSION, "events": events})
     if s.get("access_token") and not s.get("demo"):
         _set_session(resp, s)
     return resp
