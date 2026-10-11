@@ -329,7 +329,12 @@ def test_mail_without_a_date_does_not_break_grouping():
 
 def test_multitenant_platform_does_not_merge_companies():
     a = classify_message(
-        m("Rheinmetall <no-reply@rheinmetall.recruitmail.com>", "Ihre Bewerbung als Webentwickler (m/w/d)", "Vielen Dank für Ihre Bewerbung bei Rheinmetall.", id="1")
+        m(
+            "Rheinmetall <no-reply@rheinmetall.recruitmail.com>",
+            "Ihre Bewerbung als Webentwickler (m/w/d)",
+            "Vielen Dank für Ihre Bewerbung bei Rheinmetall.",
+            id="1",
+        )
     )
     b = classify_message(
         m(
