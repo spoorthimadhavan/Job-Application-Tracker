@@ -8,7 +8,7 @@ export default function StatTiles({ counts, total, active, onPick }) {
       </button>
       {TILE_ORDER.map((k) => (
         <button key={k} className={`stat c-${STATUS[k].color}`} aria-pressed={active === k} onClick={() => onPick(k)}>
-          <b>{counts[k] || 0}</b><span>{STATUS[k].tile}</span>
+          <b>{counts[k] || 0}</b><span><i className="dot" aria-hidden="true" />{STATUS[k].tile}</span>
         </button>
       ))}
     </div>
