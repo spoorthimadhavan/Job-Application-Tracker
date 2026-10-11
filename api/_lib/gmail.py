@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import html
+import json
 import re
 import time
 from datetime import UTC, datetime
@@ -13,8 +14,12 @@ import httpx
 API = "https://gmail.googleapis.com/gmail/v1/users/me"
 QUERY = (
     "after:{since} (Bewerbung OR application OR candidacy OR Absage OR interview OR "
-    'Vorstellungsgespräch OR "your application" OR Neuigkeiten OR "thank you for applying")'
+    'Vorstellungsgespräch OR "your application" OR Neuigkeiten OR "thank you for applying") '
+    "-in:sent -in:drafts -from:(jobalerts-noreply@linkedin.com OR jobalert.indeed.com OR match.indeed.com OR "
+    "jobagent.stepstone.de OR noreply@github.com OR notifications@github.com OR notifications@vercel.com OR glassdoor.com)"
 )
+BATCH = "https://gmail.googleapis.com/batch/gmail/v1"
+META = "format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date"
 
 
 def _hdr(msg: dict, name: str) -> str:
@@ -35,12 +40,85 @@ _CACHE: dict[str, dict] = {}  # message metadata never changes, so warm instance
 _CACHE_MAX = 3000
 
 
+def _parse_batch(resp: httpx.Response, ids: list[str]) -> dict[str, dict | None]:
+    """Read Google's multipart/mixed batch answer: one HTTP response per part, keyed by Content-ID."""
+    m = re.search(r"boundary=([^;\s]+)", resp.headers.get("content-type", ""))
+    out: dict[str, dict | None] = {}
+    if not m:
+        return out
+    for part in resp.text.split("--" + m.group(1).strip('"')):
+        cid = re.search(r"Content-ID:\s*<response-(\d+)>", part, re.I)
+        if not cid:
+            continue
+        i = ids[int(cid.group(1))]
+        inner = part.split("\r\n\r\n", 1)[-1] if "\r\n\r\n" in part else part.split("\n\n", 1)[-1]
+        status = re.match(r"\s*HTTP/[\d.]+\s+(\d+)", inner)
+        body = re.split(r"\r?\n\r?\n", inner, maxsplit=1)
+        try:
+            out[i] = json.loads(body[1]) if status and status.group(1) == "200" and len(body) > 1 else None
+        except ValueError:
+            out[i] = None
+        if status and status.group(1) in ("429", "500", "502", "503"):
+            out[i] = {"_retry": True}
+    return out
+
+
+async def _fetch_chunk(c: httpx.AsyncClient, ids: list[str], query: str) -> dict[str, dict | None]:
+    """Up to ~50 messages in ONE request (Gmail batch). Falls back to single requests if the batch call fails."""
+    boundary = "jtbatch"
+    body = (
+        "".join(
+            f"--{boundary}\r\nContent-Type: application/http\r\nContent-ID: <{n}>\r\n\r\nGET /gmail/v1/users/me/messages/{i}?{query}\r\n\r\n"
+            for n, i in enumerate(ids)
+        )
+        + f"--{boundary}--"
+    )
+    try:
+        r = await c.post(BATCH, content=body, headers={"Content-Type": f"multipart/mixed; boundary={boundary}"})
+        if r.status_code == 200:
+            got = _parse_batch(r, ids)
+            if got:
+                return got
+    except httpx.HTTPError:
+        pass
+
+    async def one(i):
+        r = await c.get(f"{API}/messages/{i}?{query}")
+        return i, (r.json() if r.status_code == 200 else ({"_retry": True} if r.status_code in (429, 500, 502, 503) else None))
+
+    return dict(await asyncio.gather(*[one(i) for i in ids]))
+
+
+async def _fetch_many(c, ids: list[str], query: str, cache: dict, deadline, stats, chunk: int = 50, parallel: int = 4) -> None:
+    todo = [i for i in ids if i not in cache]
+    chunks = [todo[n : n + chunk] for n in range(0, len(todo), chunk)]
+    sem = asyncio.Semaphore(parallel)
+
+    async def run(group):
+        async with sem:
+            if deadline and time.monotonic() > deadline:  # out of time: the next poll continues from the cache
+                if stats is not None:
+                    stats["partial"] = True
+                return
+            got = await _fetch_chunk(c, group, query)
+        for i in group:
+            v = got.get(i)
+            if v and not v.get("_retry"):
+                if len(cache) >= _CACHE_MAX:
+                    cache.clear()
+                cache[i] = v
+            elif stats is not None and (i not in got or (v and v.get("_retry"))):
+                stats["partial"] = True
+
+    await asyncio.gather(*[run(g) for g in chunks])
+
+
 async def list_messages(token: str, since: str, limit: int = 500, deadline: float | None = None, stats: dict | None = None) -> list[dict]:
     h = {"Authorization": f"Bearer {token}"}
     ids, page = [], None
     async with httpx.AsyncClient(timeout=30, headers=h) as c:
         while len(ids) < limit:
-            params = {"q": QUERY.format(since=since), "maxResults": 100}
+            params = {"q": QUERY.format(since=since), "maxResults": min(500, limit)}
             if page:
                 params["pageToken"] = page
             r = await c.get(f"{API}/messages", params=params)
@@ -50,30 +128,8 @@ async def list_messages(token: str, since: str, limit: int = 500, deadline: floa
             page = data.get("nextPageToken")
             if not page:
                 break
-        sem = asyncio.Semaphore(25)
-
-        async def one(i):
-            if i in _CACHE:
-                return _CACHE[i]
-            async with sem:
-                if deadline and time.monotonic() > deadline:  # out of time: the next poll continues from the cache
-                    if stats is not None:
-                        stats["partial"] = True
-                    return None
-                r = await c.get(
-                    f"{API}/messages/{i}",
-                    params=[("format", "metadata"), ("metadataHeaders", "From"), ("metadataHeaders", "Subject"), ("metadataHeaders", "Date")],
-                )
-                if r.status_code != 200:
-                    if stats is not None and r.status_code in (429, 500, 502, 503):
-                        stats["partial"] = True
-                    return None
-                if len(_CACHE) >= _CACHE_MAX:
-                    _CACHE.clear()
-                _CACHE[i] = r.json()
-                return _CACHE[i]
-
-        raw = await asyncio.gather(*[one(i) for i in ids[:limit]])
+        ids = ids[:limit]
+        await _fetch_many(c, ids, META, _CACHE, deadline, stats)
     return [
         {
             "id": m["id"],
@@ -83,8 +139,8 @@ async def list_messages(token: str, since: str, limit: int = 500, deadline: floa
             "date": _iso(m),
             "labels": m.get("labelIds", []),
         }
-        for m in raw
-        if m
+        for i in ids
+        if (m := _CACHE.get(i))
     ]
 
 
@@ -118,6 +174,7 @@ async def get_message(token: str, msg_id: str) -> dict:
 
 
 _BODY_CACHE: dict[str, str] = {}
+_FULL: dict[str, dict] = {}
 
 
 def _plain(out: dict) -> str:
@@ -135,29 +192,15 @@ async def enrich_truncated(token: str, msgs: list[dict], needs_body, cap: int = 
     todo = [m for m in sorted(msgs, key=lambda x: x["date"], reverse=True) if needs_body(m)][:cap]
     if not todo:
         return msgs
-    sem = asyncio.Semaphore(15)
     async with httpx.AsyncClient(timeout=30, headers={"Authorization": f"Bearer {token}"}) as c:
-
-        async def one(m):
-            m["preview"] = m["snippet"]
-            if m["id"] in _BODY_CACHE:
-                m["snippet"] = _BODY_CACHE[m["id"]]
-                return
-            async with sem:
-                if deadline and time.monotonic() > deadline:
-                    if stats is not None:
-                        stats["partial"] = True
-                    return
-                r = await c.get(f"{API}/messages/{m['id']}", params={"format": "full"})
-            if r.status_code != 200:
-                if stats is not None and r.status_code in (429, 500, 502, 503):
-                    stats["partial"] = True
-                return
+        await _fetch_many(c, [m["id"] for m in todo], "format=full", _FULL, deadline, stats, chunk=20, parallel=4)
+    for m in todo:
+        m["preview"] = m["snippet"]
+        if m["id"] in _BODY_CACHE:
+            m["snippet"] = _BODY_CACHE[m["id"]]
+        elif full := _FULL.pop(m["id"], None):
             out: dict = {}
-            _walk(r.json().get("payload", {}), out)
-            text = _plain(out)[:1500]
-            if text:
+            _walk(full.get("payload", {}), out)
+            if text := _plain(out)[:1500]:
                 _BODY_CACHE[m["id"]] = m["snippet"] = text
-
-        await asyncio.gather(*[one(m) for m in todo], return_exceptions=True)
     return msgs

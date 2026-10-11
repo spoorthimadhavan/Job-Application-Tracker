@@ -42,8 +42,15 @@ export default function App() {
   useEffect(refreshDocs, [refreshDocs]);
   const onSignedOut = useCallback(() => setMe((m) => ({ ...m, email: null })), []);
   const since = sinceFor(range.choice, range.custom, me && me.member_since);
-  const { data, error } = useApplications(signedIn, since, onSignedOut);
-  const merged = useMemo(() => applyOverrides(data ? data.applications : [], overrides), [data, overrides]);
+  // Always read at least 6 months from Gmail and cut the list to the chosen range here:
+  // switching between 1, 3 or 6 months is instant and every status is worked out from the same mail.
+  const sixMonths = sinceFor("6m");
+  const loadSince = since < sixMonths ? since : sixMonths;
+  const { data, error } = useApplications(signedIn, loadSince, onSignedOut);
+  const merged = useMemo(
+    () => applyOverrides((data ? data.applications : []).filter((a) => a.date >= since), overrides),
+    [data, overrides, since]
+  );
   const changeRange = (r) => { setRange(r); saveRange(r); };
 
   if (me === undefined) return <p className="center muted">Loading…</p>;
@@ -64,7 +71,7 @@ export default function App() {
         email={me.email}
         demo={me.demo}
         updatedAt={data && data.updated_at}
-        since={data && data.since}
+        since={data && since}
         onLogout={() => logout().then(() => setMe({ ...me, email: null }))}
       />
       {error && <p className="banner">{error}</p>}

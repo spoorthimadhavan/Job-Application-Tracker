@@ -58,6 +58,56 @@ def mock_client_factory(handler):
     return factory
 
 
+def batch_reply(request, make):
+    """Answer a Gmail batch POST like Google does: multipart/mixed, one HTTP response per part."""
+    import re
+
+    ids = re.findall(r"GET /gmail/v1/users/me/messages/(\w+)\?", request.content.decode())
+    parts = "".join(
+        f"--batch_x\r\nContent-Type: application/http\r\nContent-ID: <response-{n}>\r\n\r\n"
+        f"HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{make(i)}\r\n"
+        for n, i in enumerate(ids)
+    )
+    return httpx.Response(200, headers={"content-type": "multipart/mixed; boundary=batch_x"}, text=parts + "--batch_x--")
+
+
+@pytest.mark.asyncio
+async def test_batch_reads_many_messages_in_one_request(monkeypatch):
+    import json
+
+    gmail._CACHE.clear()
+    posts = []
+
+    def handler(request):
+        if request.method == "POST":
+            posts.append(1)
+            return batch_reply(
+                request,
+                lambda i: json.dumps({"id": i, "snippet": "s" + i, "payload": {"headers": [{"name": "Subject", "value": "S" + i}]}}),
+            )
+        return httpx.Response(200, json={"messages": [{"id": f"m{n}"} for n in range(120)]})
+
+    monkeypatch.setattr(gmail.httpx, "AsyncClient", mock_client_factory(handler))
+    msgs = await gmail.list_messages("tok", "2026/05/01")
+    assert len(msgs) == 120 and msgs[5]["subject"] == "Sm5" and msgs[5]["snippet"] == "sm5"
+    assert len(posts) == 3  # 120 messages, 50 per batch: three requests, not 120
+
+
+@pytest.mark.asyncio
+async def test_batch_failure_falls_back_to_single_requests(monkeypatch):
+    gmail._CACHE.clear()
+
+    def handler(request):
+        if request.method == "POST":
+            return httpx.Response(500)
+        if "/messages/" in str(request.url):
+            return httpx.Response(200, json={"id": "m1", "snippet": "x", "payload": {"headers": []}})
+        return httpx.Response(200, json={"messages": [{"id": "m1"}]})
+
+    monkeypatch.setattr(gmail.httpx, "AsyncClient", mock_client_factory(handler))
+    assert [m["id"] for m in await gmail.list_messages("tok", "2026/05/01")] == ["m1"]
+
+
 @pytest.mark.asyncio
 async def test_list_messages_pages_and_reads_metadata(monkeypatch):
     def handler(request: httpx.Request):
@@ -66,21 +116,25 @@ async def test_list_messages_pages_and_reads_metadata(monkeypatch):
         if url.endswith("/messages") or "/messages?" in url:
             assert "after%3A2026%2F05%2F01" in url or "after:2026/05/01" in url
             return httpx.Response(200, json={"messages": [{"id": "m1"}, {"id": "m2"}]})
+        if request.method == "POST":
+            import json as _json
+
+            return batch_reply(request, lambda i: _json.dumps(meta(i)))
         mid = url.split("/messages/")[1].split("?")[0]
-        return httpx.Response(
-            200,
-            json={
-                "id": mid,
-                "snippet": "snip " + mid,
-                "payload": {
-                    "headers": [
-                        {"name": "From", "value": "a@b.c"},
-                        {"name": "Subject", "value": "Subj " + mid},
-                        {"name": "Date", "value": "Tue, 06 Oct 2026 20:19:03 +0000"},
-                    ]
-                },
+        return httpx.Response(200, json=meta(mid))
+
+    def meta(mid):
+        return {
+            "id": mid,
+            "snippet": "snip " + mid,
+            "payload": {
+                "headers": [
+                    {"name": "From", "value": "a@b.c"},
+                    {"name": "Subject", "value": "Subj " + mid},
+                    {"name": "Date", "value": "Tue, 06 Oct 2026 20:19:03 +0000"},
+                ]
             },
-        )
+        }
 
     monkeypatch.setattr(gmail.httpx, "AsyncClient", mock_client_factory(handler))
     msgs = await gmail.list_messages("tok", "2026/05/01")
