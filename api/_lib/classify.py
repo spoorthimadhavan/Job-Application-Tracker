@@ -104,7 +104,7 @@ APPLICATION_CONTEXT = re.compile(
 
 
 # Bump when the rules change: browsers keep classified mail and drop it when this differs.
-RULES_VERSION = "2026-10-11f"
+RULES_VERSION = "2026-10-11g"
 
 
 @dataclass
@@ -239,6 +239,7 @@ COMPANY_WORDS = re.compile(
     re.I,
 )
 PERSON = re.compile(r"[A-ZÄÖÜ][a-zäöüß'’-]+(?: [A-ZÄÖÜ][a-zäöüß'’-]+){1,2}|[A-ZÄÖÜ][a-zäöüß'’-]+, [A-ZÄÖÜ][a-zäöüß'’-]+")
+PLATFORM_ONLY = {"procertifyhub", "procertify"}
 STOP_COMPANY = {
     "people",
     "system",
@@ -323,6 +324,8 @@ def _company_info(sender: str, subject: str = "", text: str = "") -> tuple[str, 
                 return _domain_company(dom), False
         elif found := _company_from_text(subject) or _company_from_text(f"{subject} {text}"):
             return found, False
+    if key in PLATFORM_ONLY and (found := _company_from_text(subject) or _company_from_text(f"{subject} {text}")):
+        return found, False  # the sender is the platform ("Pro Certify"), the employer is named in the text
     if key in ATS and not (name and len(GENERIC.sub("", name).strip(" -|,.")) > 1):
         # multi-tenant platform (acme.recruitmail.com, careers.acme.personio.de): tenant first, then the company named in the text
         tenant = [p for p in base[:-1] if p not in ATS]
@@ -342,7 +345,10 @@ def _company_info(sender: str, subject: str = "", text: str = "") -> tuple[str, 
         if not ats_or_free:
             return _domain_company(dom), False
     if key in ATS:
-        key = GENERIC.sub("", re.sub(r"[-_.]", " ", local)).strip() or key
+        from_local = GENERIC.sub("", re.sub(r"[-_.]", " ", local)).strip()
+        if from_local:
+            return from_local.title(), False  # "creditreform@myworkday.com": the mailbox names the employer
+        key = key
     return key.strip().title(), True
 
 
@@ -425,7 +431,8 @@ def classify_message(m: dict) -> Event | None:
     if labels & BULK_LABELS and not PERSONAL_APPLICATION.search(blob):
         return None
     company, weak = _company_info(sender, subject, snippet)
-    weak = weak or _weak_company(company)
+    person_like = bool(PERSON.fullmatch(company)) and company == _sender_display(sender) and not COMPANY_WORDS.search(company)
+    weak = weak or _weak_company(company) or person_like
     role = _role(subject, snippet)
     if INCOMPLETE.search(blob) and re.search(r"bewerbung|\bjob\b|stelle|position|developer|engineer|entwickler", blob, re.I):
         return ev(company, "Role not named" if role == "Application" else role, "C", "Application not completed (reminder).", "email")
@@ -478,6 +485,7 @@ GENERIC_ROLES = {"application", "linkedin application", "role not named", ""}
 
 
 def _rolekey(role: str) -> str:
+    role = role.split(" / ")[0]  # "Software Developer (m/w/d) / Your application as ..." is the same job
     return re.sub(r"[^a-z0-9]", "", re.sub(r"\(.*?\)", "", role.lower()))
 
 

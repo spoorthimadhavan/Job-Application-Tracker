@@ -482,7 +482,13 @@ def test_company_cleanup_from_sender_names():
         m("noreply@join.com", "We received your application for a position at Airteam Aerial Intelligence GmbH", "Thank you for applying for this position.")
     )
     assert e.company == "Airteam Aerial Intelligence GmbH"
-    e = classify_message(m("Andre, Elke <e@fom.de>", "FOM - Ihre Bewerbung für die Position Core Systems Engineer (m/w/d)", "Leider müssen wir absagen"))
+    e = classify_message(
+        m(
+            "Andre, Elke <e@fom.de>",
+            "FOM - Ihre Bewerbung für die Position Core Systems Engineer (m/w/d)",
+            "Leider müssen wir Ihnen mitteilen, dass wir Ihre Bewerbung nicht weiter berücksichtigen können.",
+        )
+    )
     assert e.company == "FOM"
 
 
@@ -569,3 +575,51 @@ def test_company_from_subject_end_and_icims_suffix():
         )
     )
     assert e.company.startswith("Transcontinental")
+
+
+def test_platform_sender_is_not_the_employer():
+    e = classify_message(
+        m(
+            "Pro Certify Career Update <careers@procertifyhub.com>",
+            "Assessment Next Steps: Junior JavaScript Developer",
+            "Technical Assessment. Thank you for your application for the Junior JavaScript Developer role at Ravencoin Foundation. Your profile has moved to",
+        )
+    )
+    assert e.company == "Ravencoin Foundation"
+
+
+def test_mailbox_name_on_workday_is_the_employer_and_never_merges_by_role():
+    a = classify_message(m("creditreform@myworkday.com", "Deine Bewerbung als Software Entwickler (m/w/d)", "Leider", id="1"))
+    b = classify_message(
+        m(
+            "Melanie <hr@optadata.de>",
+            "Danke für Deine Bewerbung als Softwareentwickler (w/m/x)",
+            "Vielen Dank für Ihre Bewerbung, wir haben Ihre Bewerbung erhalten und melden uns.",
+            id="2",
+        )
+    )
+    assert a.company == "Creditreform" and not a.weak
+    assert len(build_applications([a, b], NOW)) == 2
+
+
+def test_person_name_sender_joins_bilingual_title_of_same_job():
+    a = classify_message(
+        m(
+            "Reifenhäuser NEXT <j@rexx-systems.com>",
+            "Deine Bewerbung als (Junior) Software Developer (m/w/d) / Your application as (Junior) Software Developer (m/w/d)",
+            "Vielen Dank für Ihre Bewerbung, wir haben Ihre Bewerbung erhalten.",
+            date="2026-07-14",
+            id="1",
+        )
+    )
+    b = classify_message(
+        m(
+            "Jennifer Kroll <j@rexx-systems.com>",
+            "Deine Bewerbung als (Junior) Software Developer (m/w/d)",
+            "Leider müssen wir Ihnen mitteilen, dass wir Ihre Bewerbung nicht weiter berücksichtigen können.",
+            date="2026-07-23",
+            id="2",
+        )
+    )
+    rows = build_applications([a, b], NOW)
+    assert len(rows) == 1 and rows[0]["status"] == "R"
