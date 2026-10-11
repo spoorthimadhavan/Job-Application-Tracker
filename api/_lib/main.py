@@ -44,6 +44,10 @@ def me(request: Request):
 def login(request: Request):
     if not settings.GOOGLE_CONFIGURED:
         raise HTTPException(503, "Google sign-in is not configured on this server")
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+    if settings.PRODUCTION_HOST and not settings.REDIRECT_URI and host != settings.PRODUCTION_HOST:
+        # opened through a per-deployment address: Google only knows the production address
+        return RedirectResponse(f"https://{settings.PRODUCTION_HOST}/api/auth/login")
     state = auth.new_state()
     resp = RedirectResponse(auth.login_url(request, state))
     resp.set_cookie(auth.STATE_COOKIE, state, httponly=True, secure=settings.COOKIE_SECURE, samesite="lax", max_age=600, path="/")

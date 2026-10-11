@@ -23,3 +23,6 @@ NO_RESPONSE_DAYS = 42
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 # Must be an address on a domain you verified in Resend (the test sender onboarding@resend.dev only delivers to your own Resend account email)
 MAIL_FROM = os.getenv("MAIL_FROM", "Job Application Tracker <onboarding@resend.dev>")
+
+# Vercel sets this to the stable production domain; sign-in is always started there because only that redirect URI is registered with Google
+PRODUCTION_HOST = os.getenv("VERCEL_PROJECT_PRODUCTION_URL", "")

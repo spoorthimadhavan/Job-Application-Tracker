@@ -187,3 +187,12 @@ def test_scan_real_path_uses_batch_fetch(client, monkeypatch):
     assert c.post("/api/ids", json={"since": "2026-05-01"}).json()["ids"] == ["aa11bb22", "cc33dd44"]
     data = c.post("/api/scan", json={"ids": ["aa11bb22", "cc33dd44"]}).json()
     assert data["events"]["aa11bb22"]["company"] == "Foo GmbH" and len(data["events"]) == 2
+
+
+def test_login_from_a_deployment_url_moves_to_the_production_domain(client, monkeypatch):
+    from _lib import settings
+
+    monkeypatch.setattr(settings, "GOOGLE_CONFIGURED", True)
+    monkeypatch.setattr(settings, "PRODUCTION_HOST", "my-app.vercel.app")
+    r = client.get("/api/auth/login", headers={"host": "my-app-abc123-team.vercel.app"}, follow_redirects=False)
+    assert r.status_code in (302, 307) and r.headers["location"] == "https://my-app.vercel.app/api/auth/login"
