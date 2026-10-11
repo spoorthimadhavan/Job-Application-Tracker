@@ -14,7 +14,8 @@ import httpx
 API = "https://gmail.googleapis.com/gmail/v1/users/me"
 QUERY = (
     "after:{since} (subject:(Bewerbung OR Bewerbungen OR application OR candidacy OR candidature OR Absage OR interview OR "
-    'Vorstellungsgespräch OR Neuigkeiten OR Interesse OR interest OR "your process" OR Eingangsbestätigung OR Rückmeldung OR feedback OR Zusage) '
+    'Vorstellungsgespräch OR Neuigkeiten OR Interesse OR interest OR "your process" OR Eingangsbestätigung OR Rückmeldung OR feedback OR Zusage OR '
+    'assessment OR "next steps" OR "coding challenge" OR Einladung OR Gespräch OR "status update" OR Bewerber OR withdrawn OR Stelle OR "job application") '
     'OR "thank you for applying" OR "regret to inform" OR "move forward with other" OR (leider Bewerbung) OR "not move you forward" OR '
     '"another candidate" OR "other candidates" OR "andere Kandidaten" OR "anderen Bewerber" OR "pursue other" OR "nicht berücksichtigen" OR '
     "(unfortunately (application OR position OR role))) "
@@ -200,7 +201,8 @@ def _plain(out: dict) -> str:
         txt = out.get("text/html") or txt
     txt = re.sub(r"(?is)<(head|style|script)\b.*?</\1>", " ", txt)
     txt = re.sub(r"(?s)<[^>]+>", " ", txt)
-    return re.sub(r"\s+", " ", html.unescape(txt)).strip()
+    txt = re.sub("[\u034f\u200b-\u200f\u2060\ufeff\u00ad\u2007\u202f\u180e]+", "", html.unescape(txt))  # invisible padding of newsletters
+    return re.sub(r"\s+", " ", txt).strip()
 
 
 async def enrich_truncated(token: str, msgs: list[dict], needs_body, cap: int = 150, deadline: float | None = None, stats: dict | None = None) -> list[dict]:
@@ -220,7 +222,7 @@ async def enrich_truncated(token: str, msgs: list[dict], needs_body, cap: int = 
         elif full := _FULL.pop(m["id"], None):
             out: dict = {}
             _walk(full.get("payload", {}), out)
-            if text := _plain(out)[:1500]:
+            if text := _plain(out)[:3000]:
                 _BODY_CACHE[m["id"]] = m["snippet"] = text
                 m["_body_ok"] = True
     return msgs

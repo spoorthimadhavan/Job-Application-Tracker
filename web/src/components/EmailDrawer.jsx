@@ -6,7 +6,7 @@ import { STATUS, formatDate } from "../status.js";
 
 const SOURCE = { linkedin: "LinkedIn", indeed: "Indeed", stepstone: "StepStone", email: "Email" };
 
-const MOVE_TO = ["S", "U", "A", "R", "I", "N", "C"];
+const MOVE_TO = ["S", "U", "A", "R", "I", "N", "W", "C"];
 
 export default function EmailDrawer({ application, email, onDocsChange, onStatus, onClose }) {
   const [pick, setPick] = useState(application.events[0]);

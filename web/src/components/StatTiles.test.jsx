@@ -15,6 +15,7 @@ describe("StatTiles", () => {
       "Rejected, no response (6–8 weeks)",
       "Under review",
       "Applied (up to 6 weeks)",
+      "Withdrawn by me",
       "Account created and not applied",
     ]);
     expect(screen.getByRole("button", { name: /^3\s*Rejected$/ })).toBeInTheDocument();

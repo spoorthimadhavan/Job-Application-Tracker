@@ -489,3 +489,83 @@ def test_company_cleanup_from_sender_names():
 def test_not_a_job_mail():
     assert classify_message(m("No-reply-esta5@cbp.dhs.gov", "ESTA Application Number", "Your ESTA application")) is None
     assert classify_message(m("Matt Hazim <m@x.com>", "Your AI Clipping Agency application — here's what's next", "application")) is None
+
+
+# ---- round 3: mismatches seen in the live list ----
+def test_invisible_padding_does_not_hide_the_decision():
+    pad = "͏ " * 400
+    e = classify_message(
+        m(
+            "info@email.stepstone.de",
+            "Update on your application for the role of React Developer:in (m/w/d) with GreenPocket GmbH",
+            "Feedback from GreenPocket GmbH " + pad + " Unfortunately we must inform you that we cannot consider you for the next stage",
+        )
+    )
+    assert e.status == "R"
+
+
+def test_assessment_invitation_is_selected_and_company_is_the_employer():
+    e = classify_message(
+        m(
+            "careers@procertifyhub.com",
+            "Assessment Next Steps: Junior JavaScript Developer",
+            "Technical Assessment A step in your application. Thank you for your application for the Junior JavaScript Developer role at Ravencoin Foundation. Your profile has moved to",
+        )
+    )
+    assert (e.status, e.company) == ("S", "Ravencoin Foundation")
+
+
+def test_company_names_never_merge_by_loose_role_match():
+    apple = classify_message(
+        m(
+            "Apple Worldwide Recruiting <a@email.apple.com>",
+            "Danke für dein Interesse an Apple.",
+            "Frontend Engineer, Annotation Platform für die Position",
+            id="1",
+        )
+    )
+    pigment = classify_message(
+        m(
+            "Pigment <no-reply@hire.lever.co>",
+            "Thanks for your interest in Pigment, Spoorthi",
+            "Thank you for your application. After reviewing your work we decided to not move forward",
+            id="2",
+        )
+    )
+    pigment.role = "Front-end Engineer"
+    apple.role = "AIML - Frontend Engineer, Annotation Platform & Agentic UI Experiences"
+    rows = build_applications([apple, pigment], NOW)
+    assert len(rows) == 2
+
+
+def test_withdrawn_stays_withdrawn():
+    e = classify_message(
+        m("noreply@mail.amazon.jobs", "You've withdrawn your Amazon job application!", "position of Quality Assurance Engineer-I (ID: 604179)")
+    )
+    assert e.status == "W"
+    assert build_applications([e], NOW)[0]["status"] == "W"
+
+
+def test_promo_complete_your_application_is_not_a_job():
+    assert (
+        classify_message(m("noreply@axisbank.com", "Hi Congrats - Complete your Application to have your card dispatched", "Complete your application")) is None
+    )
+
+
+def test_company_from_subject_end_and_icims_suffix():
+    e = classify_message(
+        m(
+            "System <noreply@sopea-hr.com>",
+            "Ihre Bewerbung als Softwareentwickler (m/w/d) vom 15.05.2026 bei Espera-Werke GmbH",
+            "Sie haben die Eingabe noch nicht vollständig abgeschlossen. Bewerbung",
+        )
+    )
+    assert e.company == "Espera-Werke GmbH"
+    e = classify_message(
+        m(
+            "Transcontinental Inc. @ icims <x+autoreply@talent.icims.com>",
+            "Thank you from Transcontinental Inc.",
+            "we will not move you forward with your application",
+        )
+    )
+    assert e.company.startswith("Transcontinental")
