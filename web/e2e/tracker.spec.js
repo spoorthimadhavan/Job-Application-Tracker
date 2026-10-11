@@ -26,6 +26,7 @@ test("tiles appear in the agreed order with the agreed labels", async ({ page })
     "Rejected, no response (6–8 weeks)",
     "Under review",
     "Applied (up to 6 weeks)",
+    "Withdrawn by me",
     "Account created and not applied",
   ]);
 });
