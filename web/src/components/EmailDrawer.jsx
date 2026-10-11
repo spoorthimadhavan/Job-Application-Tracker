@@ -6,7 +6,9 @@ import { STATUS, formatDate } from "../status.js";
 
 const SOURCE = { linkedin: "LinkedIn", indeed: "Indeed", stepstone: "StepStone", email: "Email" };
 
-export default function EmailDrawer({ application, email, onDocsChange, onClose }) {
+const MOVE_TO = ["S", "U", "A", "R", "I", "N", "C"];
+
+export default function EmailDrawer({ application, email, onDocsChange, onStatus, onClose }) {
   const [pick, setPick] = useState(application.events[0]);
   const [mail, setMail] = useState(null);
   const [err, setErr] = useState("");
@@ -33,6 +35,25 @@ export default function EmailDrawer({ application, email, onDocsChange, onClose 
           </div>
           <button className="btn ghost small" onClick={onClose}>Close</button>
         </header>
+
+        <section className="move">
+          <h3>Move to</h3>
+          <div className="moves">
+            {MOVE_TO.map((k) => (
+              <button key={k} className="chip" aria-pressed={application.status === k} onClick={() => onStatus(application.id, k)}>
+                {STATUS[k].label}
+              </button>
+            ))}
+          </div>
+          {application.manual ? (
+            <p className="muted">
+              Set by you (the emails say: {STATUS[application.auto]?.label}).{" "}
+              <button className="btn ghost small" onClick={() => onStatus(application.id, null)}>Back to automatic</button>
+            </p>
+          ) : (
+            <p className="muted">Automatic from your emails. Pick a status to override it. Saved in this browser.</p>
+          )}
+        </section>
 
         <Documents email={email} appId={application.id} onChange={onDocsChange} />
 
