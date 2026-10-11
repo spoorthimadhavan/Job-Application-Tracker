@@ -114,7 +114,11 @@ _BODY_CACHE: dict[str, str] = {}
 
 
 def _plain(out: dict) -> str:
-    txt = out.get("text/plain") or re.sub(r"<[^>]+>", " ", out.get("text/html") or "")
+    txt = out.get("text/plain") or ""
+    if not txt.strip() or re.match(r"\s*<(!doctype|html|head|body|table)", txt, re.I):
+        txt = out.get("text/html") or txt
+    txt = re.sub(r"(?is)<(head|style|script)\b.*?</\1>", " ", txt)
+    txt = re.sub(r"(?s)<[^>]+>", " ", txt)
     return re.sub(r"\s+", " ", html.unescape(txt)).strip()
 
 

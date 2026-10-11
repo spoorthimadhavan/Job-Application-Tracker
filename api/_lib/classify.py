@@ -107,6 +107,8 @@ def _sender_display(sender: str) -> str:
 
 
 ROLE_PATTERNS = (
+    r"interest in the\s+(.+?)\s+(?:position|role)\b",
+    r"position als\s+(.+?)\s+(?:in|bei|am|im)\s",
     r"following role:\s*(.+?)\s+\d{6,}",
     r"bewerbung als\s+(.+?)\s+\d{6,}\s+bekommen",
     r"(?:applying|applied) for the\s+(.+?)\s+position",
@@ -155,19 +157,64 @@ ATS = {
 SUBDOMAINS = {"m", "mail", "email", "info", "jobs", "e", "msg", "talent", "hire", "notifications", "mg", "em"}
 
 
-def _company_from_sender(sender: str) -> str:
-    name = re.match(r'\s*"?([^"<]+?)"?\s*<', sender)
+FREE_MAIL = {"gmail", "googlemail", "outlook", "hotmail", "yahoo", "gmx", "web", "icloud", "t-online", "live", "proton", "protonmail"}
+COMPANY_WORDS = re.compile(
+    r"\b(group|team|hr|gmbh|ag|se|inc|ltd|llc|jobs|careers?|recruit\w*|karriere|consulting|solutions|systems|services|bank|holding|media|health|labs?|"
+    r"software|technologies|digital|partners|talent|people|culture)\b",
+    re.I,
+)
+PERSON = re.compile(r"[A-ZÄÖÜ][a-zäöüß'’-]+(?: [A-ZÄÖÜ][a-zäöüß'’-]+){1,2}")
+
+
+def _sender_parts(sender: str) -> tuple[str, str, str]:
+    sender = html.unescape(sender or "")
+    n = re.match(r'\s*"?([^"<]+?)"?\s*<', sender)
+    a = re.search(r"([^<\s@]+)@([^>\s]+)", sender)
+    return (n.group(1).strip() if n else ""), (a[1] if a else ""), (a[2].lower() if a else "")
+
+
+def _domain_company(dom: str) -> str:
+    parts = [p for p in dom.split(".")[:-1] if p not in SUBDOMAINS]
+    base = parts[-1] if parts else dom
+    base = re.sub(r"(hq|jobs|careers|recruiting)$", "", base) or base
+    return base.title()
+
+
+def _company_from_text(text: str) -> str:
+    for pat in (
+        r"(?:position|role|stelle)\b.{0,80}?\b(?:at|bei(?: der| dem)?)\s+([A-Z][\w&.\- ]{1,40}?)(?:[.,!]|\s+(?:We|Wir|and|und)\b|$)",
+        r"interest in ([A-Z][\w&.\-]+)!",
+    ):
+        if x := re.search(pat, text):
+            return x[1].strip()
+    return ""
+
+
+def _company_from_sender(sender: str, subject: str = "", text: str = "") -> str:
+    name, local, dom = _sender_parts(sender)
+    # "Packmatic | Your Application", "Bridger I Update on your process": the company is the prefix
+    if x := re.match(r"\s*([A-Z][\w&.\-]*(?: [A-Z][\w&.\-]*){0,2})\s+[|I]\s+\S", subject):
+        return x[1]
+    base = dom.split(".")[:-1]
+    base = [p for p in base if p not in SUBDOMAINS]
+    key = base[-1] if base else dom
+    ats_or_free = key in ATS or key in FREE_MAIL
+    personish = bool(name) and bool(PERSON.fullmatch(name)) and not COMPANY_WORDS.search(name)
+    if personish:
+        # a person's name is the sender, not the company
+        if not ats_or_free:
+            nn, nd = _norm(name), _norm(key)
+            if nn not in nd and nd not in nn:
+                return _domain_company(dom)
+        elif found := _company_from_text(f"{subject} {text}"):
+            return found
     if name:
-        n = re.sub(r"\s+", " ", GENERIC.sub("", name.group(1))).strip(" -|,.")
+        n = re.sub(r"\s+", " ", GENERIC.sub("", name)).strip(" -|,.")
         if len(n) > 1:
             return n
-    addr = re.search(r"([^<\s@]+)@([^>\s]+)", sender)
-    local, dom = (addr[1], addr[2]) if addr else ("", sender)
-    parts = [p for p in dom.lower().split(".")[:-1] if p not in SUBDOMAINS]
-    base = parts[-1] if parts else dom
-    if base in ATS:
-        base = GENERIC.sub("", re.sub(r"[-_.]", " ", local)).strip() or base
-    return base.strip().title()
+    if key in ATS:
+        key = GENERIC.sub("", re.sub(r"[-_.]", " ", local)).strip() or key
+    return key.strip().title()
 
 
 def classify_message(m: dict) -> Event | None:
@@ -225,7 +272,7 @@ def classify_message(m: dict) -> Event | None:
     # clear statement about *your* application counts there (not "senior engineer" in a newsletter)
     if labels & BULK_LABELS and not PERSONAL_APPLICATION.search(blob):
         return None
-    company = _company_from_sender(sender)
+    company = _company_from_sender(sender, subject, snippet)
     role = _role(subject, snippet)
     if context and REJECT.search(snippet):
         return ev(company, role, "R", "Rejection email.", "email", True)

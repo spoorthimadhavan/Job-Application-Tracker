@@ -112,3 +112,13 @@ async def test_get_message_returns_html_and_text(monkeypatch):
     monkeypatch.setattr(gmail.httpx, "AsyncClient", mock_client_factory(lambda r: httpx.Response(200, json=body)))
     m = await gmail.get_message("tok", "abcdef12")
     assert m["html"] == "<b>x</b>" and m["subject"] == "Hi" and m["gmail_url"].endswith("abcdef12")
+
+
+def test_plain_strips_html_doctype():
+    from _lib.gmail import _plain
+
+    out = {
+        "text/html": '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN"><html><head><style>a{}</style></head><body><p>Leider konnte Ihre Bewerbung &amp; mehr</p></body></html>'
+    }
+    assert _plain(out) == "Leider konnte Ihre Bewerbung & mehr"
+    assert _plain({"text/plain": "<!DOCTYPE html><html><body>Hi</body></html>"}) == "Hi"

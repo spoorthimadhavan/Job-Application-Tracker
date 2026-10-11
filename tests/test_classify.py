@@ -214,3 +214,32 @@ def test_rejection_only_hits_its_own_role():
     c = {**m("recruiting@acme.com", "Your application for Frontend Engineer", "Unfortunately we will not move forward", id="3"), "date": "2026-09-10"}
     rows = {r["role"]: r["status"] for r in build_applications([classify_message(x) for x in (a, b, c)], NOW)}
     assert rows == {"Frontend Engineer": "R", "Backend Engineer": "A"}
+
+
+def test_person_sender_is_not_the_company():
+    e = classify_message(
+        m(
+            "Olga Raskovic <olga.raskovic@nortal.com>",
+            "Spoorthi , thank you for your interest in Nortal!",
+            "Hello Spoorthi! Thank you for your interest in the Frontend Developer (m/w/d) position at Nortal. After a thorough review, we regret to inform you",
+        )
+    )
+    assert (e.company, e.role, e.status, e.sender) == ("Nortal", "Frontend Developer (m/w/d)", "R", "Olga Raskovic")
+
+
+def test_subject_prefix_company_beats_person_name():
+    e = classify_message(
+        m(
+            "Jasmina Abdou <admin@bridgerhq.com>",
+            "Bridger | Update on your process with Bundesliga Media",
+            "Unfortunately, they have decided not to move forward with your application",
+        )
+    )
+    assert e.company == "Bridger" and e.status == "R" and e.sender == "Jasmina Abdou"
+
+
+def test_company_named_sender_kept():
+    e = classify_message(
+        m("Athletic Sport Sponsoring <ass-jobs@m.personio.de>", "Deine Bewerbung als Fullstack Developer (m/w/d)", "vielen Dank für deine Bewerbung")
+    )
+    assert e.company == "Athletic Sport Sponsoring"
