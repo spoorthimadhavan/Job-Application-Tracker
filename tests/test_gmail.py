@@ -122,3 +122,29 @@ def test_plain_strips_html_doctype():
     }
     assert _plain(out) == "Leider konnte Ihre Bewerbung & mehr"
     assert _plain({"text/plain": "<!DOCTYPE html><html><body>Hi</body></html>"}) == "Hi"
+
+
+@pytest.mark.asyncio
+async def test_list_messages_stops_at_deadline_and_reports_partial():
+    import time
+
+    from _lib import gmail
+
+    gmail._CACHE.clear()
+    stats = {}
+    orig = httpx.AsyncClient
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        if request.url.path.endswith("/messages"):
+            return httpx.Response(200, json={"messages": [{"id": "a1"}, {"id": "b2"}]})
+        return httpx.Response(200, json={"id": "x", "payload": {"headers": []}, "snippet": ""})
+
+    transport = httpx.MockTransport(handler)
+    gmail.httpx.AsyncClient = lambda **kw: orig(transport=transport, **kw)
+    try:
+        out = await gmail.list_messages("t", "2026/05/01", deadline=time.monotonic() - 1, stats=stats)
+    finally:
+        gmail.httpx.AsyncClient = orig
+    assert out == [] and stats["partial"] is True

@@ -103,13 +103,15 @@ async def applications(request: Request, since: str = ""):
     hit = _cache.get(cache_key)
     if hit and time.time() - hit[0] < CACHE_SECONDS:
         return hit[1]
+    stats: dict = {}
     if s.get("demo"):
         msgs = [m for m in demo.MESSAGES if m["date"][:10] >= since]
     else:
         token = await auth.access_token(s)
         try:
-            msgs = await gmail.list_messages(token, since.replace("-", "/"))
-            msgs = await gmail.enrich_truncated(token, msgs, needs_body)
+            t0 = time.monotonic()  # Vercel stops a request after ~10 s, so stop early and let the next poll continue
+            msgs = await gmail.list_messages(token, since.replace("-", "/"), deadline=t0 + 5.0, stats=stats)
+            msgs = await gmail.enrich_truncated(token, msgs, needs_body, deadline=t0 + 7.5, stats=stats)
         except Exception:
             raise HTTPException(502, "Gmail could not be read right now") from None
     events = [e for e in (classify_message(m) for m in msgs) if e]
@@ -117,8 +119,9 @@ async def applications(request: Request, since: str = ""):
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
-    payload = {"updated_at": time.time(), "since": since, "counts": counts, "applications": rows}
-    _cache[cache_key] = (time.time(), payload)
+    payload = {"updated_at": time.time(), "since": since, "counts": counts, "applications": rows, "partial": bool(stats.get("partial"))}
+    if not payload["partial"]:
+        _cache[cache_key] = (time.time(), payload)
     resp = JSONResponse(payload)
     if s.get("access_token") and not s.get("demo"):
         _set_session(resp, s)  # keep the refreshed token in the cookie

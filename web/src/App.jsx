@@ -68,6 +68,7 @@ export default function App() {
         onLogout={() => logout().then(() => setMe({ ...me, email: null }))}
       />
       {error && <p className="banner">{error}</p>}
+      {data && data.partial && <p className="banner">Still reading older mail, the list fills in as it goes…</p>}
       <StatTiles counts={merged.counts} total={apps.length} active={status} onPick={(s) => setStatus(status === s ? "all" : s)} />
       <Toolbar query={query} onQuery={setQuery} sort={sort} onSort={setSort} range={range} onRange={changeRange} memberSince={me.member_since} />
       <ApplicationList apps={shown} total={apps.length} loading={!data} docs={docs} onOpen={(a) => setOpen(a.id)} />

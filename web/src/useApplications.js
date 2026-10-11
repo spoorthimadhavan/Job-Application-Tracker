@@ -8,18 +8,26 @@ export function useApplications(enabled, since, onSignedOut) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const timer = useRef();
+  const retries = useRef(0);
 
   // a new look-back range: clear the old list so the numbers never mix
   useEffect(() => setData(null), [since]);
 
   const load = useCallback(async () => {
     try {
-      setData(await getApplications(since));
+      const d = await getApplications(since);
+      setData(d);
       setError("");
+      // the server stops early on big mailboxes; ask again soon, it carries on where it stopped
+      if (d.partial && retries.current < 8) {
+        retries.current += 1;
+        setTimeout(load, 1500);
+      } else if (!d.partial) retries.current = 0;
     } catch (e) {
       if (e.status === 401) onSignedOut();
       else setError("Could not reach your mailbox. Showing the last result.");
     }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onSignedOut, since]);
 
   useEffect(() => {

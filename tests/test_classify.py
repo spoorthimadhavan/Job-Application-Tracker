@@ -290,3 +290,17 @@ def test_oh_so_company_variants_merge():
     }
     rows = build_applications([classify_message(a), classify_message(b)], NOW)
     assert len(rows) == 1 and rows[0]["status"] == "R"
+
+
+def test_interview_then_silence_becomes_no_response():
+    iv = {**m("hr@amazon.jobs", "Invitation to interview for Security Engineer", "We would like to invite you to an interview", id="1"), "date": "2026-08-17"}
+    row = build_applications([classify_message(iv)], NOW)[0]
+    assert row["status"] == "N" and "no reply" in row["note"]
+    fresh = {**iv, "date": "2026-10-05"}
+    assert build_applications([classify_message(fresh)], NOW)[0]["status"] == "S"
+
+
+def test_german_indeed_rejection_read_from_body():
+    body = "Vielen Dank für Ihre Bewerbung als Mitarbeiter/in (m/w/d) für den Empfang bei Praxis X. Praxis X hat den nächsten Schritt im Bewerbungsprozess eingeleitet. Leider konnte Ihre Bewerbung dieses Mal nicht berücksichtigt werden."
+    e = classify_message({**m("noreply@indeed.com", "Neuigkeiten zu Ihrer Bewerbung von Praxis X", body), "preview": body[:80]})
+    assert e.status == "R" and e.snippet.startswith("Vielen Dank")

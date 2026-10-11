@@ -77,7 +77,7 @@ def signed_in(client, **extra):
 def test_real_path_reads_gmail_and_classifies(client, monkeypatch):
     seen = {}
 
-    async def fake_list(token, since, limit=500):
+    async def fake_list(token, since, limit=500, **kw):
         seen.update(token=token, since=since)
         return [
             {
@@ -106,7 +106,7 @@ def test_gmail_failure_is_502(client, monkeypatch):
 def test_results_are_cached_briefly(client, monkeypatch):
     calls = []
 
-    async def fake_list(token, since, limit=500):
+    async def fake_list(token, since, limit=500, **kw):
         calls.append(1)
         return []
 
@@ -119,7 +119,7 @@ def test_results_are_cached_briefly(client, monkeypatch):
 
 
 def test_each_user_has_own_cache(client, monkeypatch):
-    async def fake_list(token, since, limit=500):
+    async def fake_list(token, since, limit=500, **kw):
         return []
 
     monkeypatch.setattr(gmail, "list_messages", fake_list)

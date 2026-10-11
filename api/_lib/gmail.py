@@ -4,6 +4,7 @@ import asyncio
 import base64
 import html
 import re
+import time
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 
@@ -34,7 +35,7 @@ _CACHE: dict[str, dict] = {}  # message metadata never changes, so warm instance
 _CACHE_MAX = 3000
 
 
-async def list_messages(token: str, since: str, limit: int = 500) -> list[dict]:
+async def list_messages(token: str, since: str, limit: int = 500, deadline: float | None = None, stats: dict | None = None) -> list[dict]:
     h = {"Authorization": f"Bearer {token}"}
     ids, page = [], None
     async with httpx.AsyncClient(timeout=30, headers=h) as c:
@@ -49,17 +50,23 @@ async def list_messages(token: str, since: str, limit: int = 500) -> list[dict]:
             page = data.get("nextPageToken")
             if not page:
                 break
-        sem = asyncio.Semaphore(40)
+        sem = asyncio.Semaphore(25)
 
         async def one(i):
             if i in _CACHE:
                 return _CACHE[i]
             async with sem:
+                if deadline and time.monotonic() > deadline:  # out of time: the next poll continues from the cache
+                    if stats is not None:
+                        stats["partial"] = True
+                    return None
                 r = await c.get(
                     f"{API}/messages/{i}",
                     params=[("format", "metadata"), ("metadataHeaders", "From"), ("metadataHeaders", "Subject"), ("metadataHeaders", "Date")],
                 )
                 if r.status_code != 200:
+                    if stats is not None and r.status_code in (429, 500, 502, 503):
+                        stats["partial"] = True
                     return None
                 if len(_CACHE) >= _CACHE_MAX:
                     _CACHE.clear()
@@ -122,13 +129,13 @@ def _plain(out: dict) -> str:
     return re.sub(r"\s+", " ", html.unescape(txt)).strip()
 
 
-async def enrich_truncated(token: str, msgs: list[dict], needs_body, cap: int = 150) -> list[dict]:
+async def enrich_truncated(token: str, msgs: list[dict], needs_body, cap: int = 150, deadline: float | None = None, stats: dict | None = None) -> list[dict]:
     """The preview often stops before the decision ("Thank you for applying ... we reviewed ...").
     For mails where that matters, read the body and classify from it. The preview column keeps the short text."""
     todo = [m for m in sorted(msgs, key=lambda x: x["date"], reverse=True) if needs_body(m)][:cap]
     if not todo:
         return msgs
-    sem = asyncio.Semaphore(20)
+    sem = asyncio.Semaphore(15)
     async with httpx.AsyncClient(timeout=30, headers={"Authorization": f"Bearer {token}"}) as c:
 
         async def one(m):
@@ -137,8 +144,14 @@ async def enrich_truncated(token: str, msgs: list[dict], needs_body, cap: int = 
                 m["snippet"] = _BODY_CACHE[m["id"]]
                 return
             async with sem:
+                if deadline and time.monotonic() > deadline:
+                    if stats is not None:
+                        stats["partial"] = True
+                    return
                 r = await c.get(f"{API}/messages/{m['id']}", params={"format": "full"})
             if r.status_code != 200:
+                if stats is not None and r.status_code in (429, 500, 502, 503):
+                    stats["partial"] = True
                 return
             out: dict = {}
             _walk(r.json().get("payload", {}), out)

@@ -388,6 +388,10 @@ def build_applications(events: list[Event], now: datetime | None = None) -> list
             age = (now - datetime.fromisoformat(last.date).replace(tzinfo=UTC)).days
             if age > NO_RESPONSE_DAYS:
                 status, note = "N", (note + " " if note else "") + f"No response after more than {NO_RESPONSE_DAYS // 7} weeks."
+        if status == "S":
+            age = (now - datetime.fromisoformat(last.date).replace(tzinfo=UTC)).days
+            if age > NO_RESPONSE_DAYS:  # interview or next step, then silence
+                status, note = "N", "Interview or next step, then no reply for more than " + f"{NO_RESPONSE_DAYS // 7} weeks."
         company = max((e.company for e in evs), key=len)
         rows.append(
             {
