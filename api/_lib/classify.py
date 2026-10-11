@@ -19,7 +19,7 @@ from .settings import NO_RESPONSE_DAYS
 REJECT = re.compile(
     r"leider|unfortunately|regret|not (be )?mov(e|ing) forward|other candidates|andere bewerber|"
     r"absage|nicht berücksichtigen|decided not to|will not move you|didn.t make it|"
-    r"nicht weiter(verfolgen|geführt)|müssen wir (ihnen|dir) (leider )?mitteilen",
+    r"nicht berücksichtigt|konnte (ihre|deine) bewerbung|nicht weiter(verfolgen|geführt)|müssen wir (ihnen|dir) (leider )?mitteilen",
     re.I,
 )
 INTERVIEW = re.compile(
@@ -86,10 +86,40 @@ class Event:
     message_id: str
     source: str
     subject: str
+    sender: str = ""
+    snippet: str = ""
 
 
 def _clean(t: str | None) -> str:
     return html.unescape(t or "").strip()
+
+
+def _sender_display(sender: str) -> str:
+    name = re.match(r'\s*"?([^"<]+?)"?\s*<', html.unescape(sender or ""))
+    if name and name.group(1).strip():
+        return name.group(1).strip()
+    addr = re.search(r"[^<\s]+@[^>\s]+", sender or "")
+    return addr.group(0) if addr else (sender or "").strip()
+
+
+ROLE_PATTERNS = (
+    r"(?:auf die )?stelle(?: als)?\s+(.+?)\s+(?:bei|in|im)\s",
+    r"bewerbung\s+(?:als|für die position|für)\s+(.+?)(?:\s+(?:bei|in)\s|[.,]|$)",
+    r"application (?:for|as)(?: the)?\s+(.+?)(?:\s+(?:at|with|position|role)\b|[.,]|$)",
+    r"(?:for|as) the\s+(.+?)\s+(?:position|role)\b",
+    r"role of\s+(.+?)\s+(?:with|at)\b",
+    r"(?:als|for|für)\s+(?:the\s+)?(.+?)(?:\s+(?:bei|at|position|role)\b|$)",
+)
+
+
+def _role(subject: str, snippet: str = "") -> str:
+    for text in (subject, snippet):
+        for pat in ROLE_PATTERNS:
+            if x := re.search(pat, text, re.I):
+                r = x[1].strip(" .,:;-")
+                if 2 < len(r) <= 90:
+                    return r
+    return "Application"
 
 
 def _day(m: dict) -> str:
@@ -139,7 +169,7 @@ def classify_message(m: dict) -> Event | None:
     mid, day = m.get("id", ""), _day(m)
 
     def ev(company, role, status, note, source, check=False):
-        return Event(company.strip(" ."), role.strip(), status, day, note, check, mid, source, subject)
+        return Event(company.strip(" ."), role.strip(), status, day, note, check, mid, source, subject, _sender_display(sender), snippet[:240])
 
     labels = set(m.get("labels") or [])
     if labels & SKIP_LABELS:  # your own sent mail, drafts, spam
@@ -159,10 +189,10 @@ def classify_message(m: dict) -> Event | None:
     if "indeed" in low:
         if x := re.search(r"Neuigkeiten zu Ihrer Bewerbung von (.+)$", subject):
             if REJECT.search(snippet):
-                return ev(x[1], "Application", "R", "Indeed rejection email.", "indeed")
+                return ev(x[1], _role("", snippet), "R", "Indeed rejection email.", "indeed")
             if INTERVIEW.search(snippet):
-                return ev(x[1], "Application", "S", "Indeed: next step.", "indeed")
-            return ev(x[1], "Application", "U", "Indeed update, open the email for the decision.", "indeed", True)
+                return ev(x[1], _role("", snippet), "S", "Indeed: next step.", "indeed")
+            return ev(x[1], _role("", snippet), "U", "Indeed update, open the email for the decision.", "indeed", True)
         return None
 
     if "stepstone" in low:
@@ -186,8 +216,7 @@ def classify_message(m: dict) -> Event | None:
     if labels & BULK_LABELS and not PERSONAL_APPLICATION.search(blob):
         return None
     company = _company_from_sender(sender)
-    role = (re.search(r"(?:als|for|für)\s+(?:the\s+)?(.+?)(?:\s+(?:bei|at|position|role)\b|$)", subject, re.I) or [None, "Application"])[1]
-    role = role[:90]
+    role = _role(subject, snippet)
     if context and REJECT.search(snippet):
         return ev(company, role, "R", "Rejection email.", "email", True)
     if context and INTERVIEW.search(blob):
@@ -249,6 +278,8 @@ def build_applications(events: list[Event], now: datetime | None = None) -> list
                 "note": note,
                 "check": last.check and status in ("R", "U", "S", "I"),
                 "source": last.source,
+                "sender": last.sender,
+                "preview": last.snippet,
                 "events": [{k: v for k, v in asdict(e).items() if k in ("status", "date", "subject", "message_id", "source")} for e in reversed(evs)],
             }
         )

@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import html
 import re
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -100,10 +101,45 @@ async def get_message(token: str, msg_id: str) -> dict:
     _walk(m.get("payload", {}), out)
     return {
         "id": msg_id,
-        "subject": _hdr(m, "subject"),
-        "from": _hdr(m, "from"),
+        "subject": html.unescape(_hdr(m, "subject")),
+        "from": html.unescape(_hdr(m, "from")),
         "date": _iso(m),
         "html": out.get("text/html"),
         "text": out.get("text/plain") or m.get("snippet", ""),
         "gmail_url": f"https://mail.google.com/mail/u/0/#all/{msg_id}",
     }
+
+
+_BODY_CACHE: dict[str, str] = {}
+
+
+def _plain(out: dict) -> str:
+    txt = out.get("text/plain") or re.sub(r"<[^>]+>", " ", out.get("text/html") or "")
+    return re.sub(r"\s+", " ", html.unescape(txt)).strip()
+
+
+async def enrich_truncated(token: str, msgs: list[dict]) -> list[dict]:
+    """Indeed's "news about your application" mails hide the decision after the snippet.
+    Fetch just those bodies so the verdict is read from the mail itself."""
+    todo = [m for m in msgs if "indeed" in (m.get("sender") or "").lower() and "neuigkeiten zu ihrer bewerbung" in (m.get("subject") or "").lower()]
+    if not todo:
+        return msgs
+    sem = asyncio.Semaphore(20)
+    async with httpx.AsyncClient(timeout=30, headers={"Authorization": f"Bearer {token}"}) as c:
+
+        async def one(m):
+            if m["id"] in _BODY_CACHE:
+                m["snippet"] = _BODY_CACHE[m["id"]]
+                return
+            async with sem:
+                r = await c.get(f"{API}/messages/{m['id']}", params={"format": "full"})
+            if r.status_code != 200:
+                return
+            out: dict = {}
+            _walk(r.json().get("payload", {}), out)
+            text = _plain(out)[:1500]
+            if text:
+                _BODY_CACHE[m["id"]] = m["snippet"] = text
+
+        await asyncio.gather(*[one(m) for m in todo], return_exceptions=True)
+    return msgs

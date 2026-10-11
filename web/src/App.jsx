@@ -40,7 +40,7 @@ export default function App() {
   const q = query.trim().toLowerCase();
   const shown = apps
     .filter((a) => status === "all" || a.status === status)
-    .filter((a) => !q || `${a.company} ${a.role}`.toLowerCase().includes(q))
+    .filter((a) => !q || `${a.company} ${a.role} ${a.sender || ""}`.toLowerCase().includes(q))
     .sort((a, b) =>
       sort === "company" ? a.company.localeCompare(b.company) : sort === "oldest" ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date)
     );

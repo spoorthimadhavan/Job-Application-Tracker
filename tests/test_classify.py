@@ -161,3 +161,12 @@ def test_real_templates_still_work():
     assert rec.status in ("A", "U")
     iv = classify_message(m("hr@acme.com", "Invitation to interview for Backend Engineer", "We would like to invite you to an interview"))
     assert iv.status == "S"
+
+
+def test_indeed_role_company_sender_preview():
+    snip = "Vielen Dank für Ihre Bewerbung auf die Stelle als Personalberater Pädagogik (m/w/d) bei Acme GmbH & Co KG. Acme hat den nächsten Schritt eingeleitet. Leider konnte Ihre Bewerbung dieses Mal nicht berücksichtigt werden."
+    mail = m('"Acme GmbH &amp; Co KG" <noreply@indeed.com>', "Neuigkeiten zu Ihrer Bewerbung von Acme GmbH &amp; Co KG", snip)
+    e = classify_message(mail)
+    assert (e.status, e.company, e.role) == ("R", "Acme GmbH & Co KG", "Personalberater Pädagogik (m/w/d)")
+    row = build_applications([e], NOW)[0]
+    assert row["sender"] == "Acme GmbH & Co KG" and row["preview"].startswith("Vielen Dank")

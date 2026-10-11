@@ -109,6 +109,7 @@ async def applications(request: Request, since: str = ""):
         token = await auth.access_token(s)
         try:
             msgs = await gmail.list_messages(token, since.replace("-", "/"))
+            msgs = await gmail.enrich_truncated(token, msgs)
         except Exception:
             raise HTTPException(502, "Gmail could not be read right now") from None
     events = [e for e in (classify_message(m) for m in msgs) if e]
