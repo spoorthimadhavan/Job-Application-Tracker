@@ -187,6 +187,7 @@ async def ids(request: Request, body: IdsBody):
 
 class ScanBody(BaseModel):
     ids: list[str]
+    bodies: bool = True  # False = quick pass from Gmail's preview only; True = also read the full text where it matters
 
 
 @app.post("/api/scan")
@@ -204,16 +205,18 @@ async def scan(request: Request, body: ScanBody):
         token = await auth.access_token(s)
         try:
             msgs = await gmail.fetch_messages(token, chunk, deadline=t0 + 6.0, stats=stats)
-            msgs = await gmail.enrich_truncated(token, msgs, needs_body, deadline=t0 + 8.0, stats=stats)
+            if body.bodies:
+                msgs = await gmail.enrich_truncated(token, msgs, needs_body, deadline=t0 + 8.0, stats=stats)
         except Exception:
             raise HTTPException(502, "Gmail could not be read right now") from None
+    pending = [m["id"] for m in msgs if not body.bodies and needs_body(m)]
     events = {}
     for m in msgs:
         if m.get("_need_body") and not m.get("_body_ok"):
             continue  # the decision may be in the body we could not read yet: leave it out so the browser asks again
         e = classify_message(m)
         events[m["id"]] = asdict(e) if e else None
-    resp = JSONResponse({"version": RULES_VERSION, "events": events})
+    resp = JSONResponse({"version": RULES_VERSION, "events": events, "pending": pending})
     if s.get("access_token") and not s.get("demo"):
         _set_session(resp, s)
     return resp

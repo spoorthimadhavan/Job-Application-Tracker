@@ -196,3 +196,31 @@ def test_login_from_a_deployment_url_moves_to_the_production_domain(client, monk
     monkeypatch.setattr(settings, "PRODUCTION_HOST", "my-app.vercel.app")
     r = client.get("/api/auth/login", headers={"host": "my-app-abc123-team.vercel.app"}, follow_redirects=False)
     assert r.status_code in (302, 307) and r.headers["location"] == "https://my-app.vercel.app/api/auth/login"
+
+
+def test_scan_quick_pass_reports_which_mails_need_their_full_text(client, monkeypatch):
+    async def fetch(token, chunk, deadline=None, stats=None):
+        return [
+            {
+                "id": "aa11bb22",
+                "sender": "luise@packmatic.io",
+                "subject": "Packmatic I Your Application",
+                "snippet": "Thank you very much for applying for the Software Engineer position. We reviewed your application materials carefully",
+                "date": "2026-10-07T07:08:00+00:00",
+            },
+            {
+                "id": "cc33dd44",
+                "sender": "jobs-noreply@linkedin.com",
+                "subject": "Your application to Dev at Foo GmbH",
+                "snippet": "",
+                "date": "2026-09-01T10:00:00+00:00",
+            },
+        ]
+
+    async def boom(*a, **k):
+        raise AssertionError("the quick pass must not read bodies")
+
+    monkeypatch.setattr(gmail, "fetch_messages", fetch)
+    monkeypatch.setattr(gmail, "enrich_truncated", boom)
+    data = signed_in(client).post("/api/scan", json={"ids": ["aa11bb22", "cc33dd44"], "bodies": False}).json()
+    assert data["pending"] == ["aa11bb22"] and set(data["events"]) == {"aa11bb22", "cc33dd44"}

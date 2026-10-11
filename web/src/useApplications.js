@@ -21,7 +21,12 @@ export function useApplications(enabled, since, onSignedOut, email) {
     if (running.current === since) return; // a read of this range is already in progress
     running.current = since;
     try {
-      const d = await getApplications(since, { email, onProgress: (p) => latest.current === since && setData(p) });
+      const d = await getApplications(since, { email, onProgress: (p) => {
+          if (latest.current !== since) return;
+          setData(p);
+          setError("");
+        },
+      });
       if (latest.current !== since) return;
       setData(d);
       setError("");
