@@ -37,7 +37,10 @@ export function useApplications(enabled, since, onSignedOut, email) {
           running.current = "";
           load();
         }, 3000);
-      } else if (!d.partial) retries.current = 0;
+      } else if (d.partial) {
+        // Gmail still refuses a few mails after several tries: stop the spinner and show what we have
+        setData({ ...d, partial: false, skipped: true });
+      } else retries.current = 0;
     } catch (e) {
       if (e.status === 401) onSignedOut();
       else setError("Could not reach your mailbox. Showing the last result.");

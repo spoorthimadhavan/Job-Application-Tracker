@@ -212,9 +212,11 @@ async def scan(request: Request, body: ScanBody):
     pending = [m["id"] for m in msgs if not body.bodies and needs_body(m)]
     events = {}
     for m in msgs:
-        if m.get("_need_body") and not m.get("_body_ok"):
-            continue  # the decision may be in the body we could not read yet: leave it out so the browser asks again
         e = classify_message(m)
+        if e and m.get("_need_body") and not m.get("_body_ok"):
+            # the full text could not be read (Gmail is slow): keep the preview verdict but ask for a manual check,
+            # so the list finishes instead of retrying the same mails forever
+            e.check = True
         events[m["id"]] = asdict(e) if e else None
     resp = JSONResponse({"version": RULES_VERSION, "events": events, "pending": pending})
     if s.get("access_token") and not s.get("demo"):
