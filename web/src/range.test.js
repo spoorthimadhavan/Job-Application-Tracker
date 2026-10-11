@@ -9,6 +9,8 @@ describe("look-back range", () => {
   afterEach(() => vi.useRealTimers());
 
   it("maps presets to start dates", () => {
+    expect(sinceFor("1w")).toBe("2026-10-04");
+    expect(sinceFor("2w")).toBe("2026-09-27");
     expect(sinceFor("1m")).toBe("2026-09-11");
     expect(sinceFor("3m")).toBe("2026-07-11");
     expect(sinceFor("6m")).toBe("2026-04-11");

@@ -1,8 +1,10 @@
 // "Look back" choices: how far back in the mailbox to read, as a YYYY-MM-DD start date.
 export const PRESETS = [
   { id: "signup", label: "Since I signed up" },
+  { id: "1w", label: "Last week" },
+  { id: "2w", label: "Last 2 weeks" },
   { id: "1m", label: "Last month" },
-  { id: "3m", label: "Last 3 months" },
+  { id: "3m", label: "Last quarter (3 months)" },
   { id: "6m", label: "Last 6 months" },
   { id: "1y", label: "Last year" },
   { id: "all", label: "All time" },
@@ -14,6 +16,12 @@ const iso = (d) => {
   return z.toISOString().slice(0, 10);
 };
 
+function daysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return iso(d);
+}
+
 function monthsAgo(n) {
   const d = new Date();
   d.setMonth(d.getMonth() - n);
@@ -23,6 +31,8 @@ function monthsAgo(n) {
 export function sinceFor(choice, custom, memberSince) {
   switch (choice) {
     case "signup": return memberSince || iso(new Date());
+    case "1w": return daysAgo(7);
+    case "2w": return daysAgo(14);
     case "1m": return monthsAgo(1);
     case "3m": return monthsAgo(3);
     case "6m": return monthsAgo(6);
