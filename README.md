@@ -13,9 +13,9 @@ Please use it, fork it and make it better. Pull requests are welcome, see [CONTR
 The most useful contribution: **an email template the classifier gets wrong** (add a test, then fix `api/_lib/classify.py`).
 
 ## Live demo
-**Live deployment: not published yet.** Deploy your own in ~2 minutes (see [Deployment](#deployment-vercel)) and put your URL here:
+**Live: https://job-application-tracker-eight-zeta.vercel.app**
 
-`https://<your-project>.vercel.app` (add a link here after you deploy, and use **Try the demo** on the login page to look around without Google keys)
+Click **Try the demo** to look around with made-up data. **Sign in with Google** works only for addresses added as test users in the owner's Google Cloud project (Google restricts Gmail access until an app passes its verification review). To use it with your own mailbox, deploy your own copy (see [Deployment](#deployment-vercel)).
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fspoorthimadhavan%2FJob-Application-Tracker&env=GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET&envDescription=Google%20OAuth%20client%20id%20and%20secret%20(one-time))
 
