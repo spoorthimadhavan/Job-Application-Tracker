@@ -122,7 +122,7 @@ async def _fetch_many(c, ids: list[str], query: str, cache: dict, deadline, stat
     await asyncio.gather(*[run(g) for g in chunks])
 
 
-async def list_ids(token: str, since: str, limit: int = 1500) -> list[str]:
+async def list_ids(token: str, since: str, limit: int = 5000) -> list[str]:
     """Message ids matching the job query, newest first (ids only: cheap)."""
     ids, page = [], None
     async with httpx.AsyncClient(timeout=30, headers={"Authorization": f"Bearer {token}"}) as c:

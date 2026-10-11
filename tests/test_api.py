@@ -166,7 +166,7 @@ def test_ids_rejects_bad_since_and_build_rejects_bad_events(demo_client):
 
 
 def test_scan_real_path_uses_batch_fetch(client, monkeypatch):
-    async def ids(token, since, limit=1500):
+    async def ids(token, since, limit=5000):
         return ["aa11bb22", "cc33dd44"]
 
     async def fetch(token, chunk, deadline=None, stats=None):
