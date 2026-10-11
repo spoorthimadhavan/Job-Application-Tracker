@@ -19,7 +19,10 @@ from .settings import NO_RESPONSE_DAYS
 REJECT = re.compile(
     r"leider|unfortunately|regret|not (be )?mov(e|ing) forward|other candidates|andere bewerber|"
     r"absage|nicht berücksichtigen|decided not to|will not move you|didn.t make it|"
-    r"nicht berücksichtigt|konnte (ihre|deine) bewerbung|nicht weiter(verfolgen|geführt)|müssen wir (ihnen|dir) (leider )?mitteilen",
+    r"move (forward|ahead) with other|moving (forward|ahead) with other|chosen to move ahead|pursue other (candidates|applicants)|"
+    r"not (been )?selected|not be (proceeding|moving)|not shortlisted|position (has been|was) filled|not successful|"
+    r"nicht in die engere|haben uns für (einen )?andere|anderen (bewerber|kandidat)|nicht berücksichtigt|konnte (ihre|deine) bewerbung|"
+    r"nicht weiter(verfolgen|geführt)|müssen wir (ihnen|dir) (leider )?mitteilen",
     re.I,
 )
 INTERVIEW = re.compile(
@@ -31,7 +34,8 @@ INTERVIEW = re.compile(
     re.I,
 )
 RECEIPT = re.compile(
-    r"application was sent|thank you for (your )?appl|thanks for appl|vielen dank für (ihre|deine) bewerbung|"
+    r"application was sent|thank you.{0,20}for applying|for applying (for|to) the|thank you for (your )?appl|thanks for appl|"
+    r"vielen dank für (ihre|deine) bewerbung|"
     r"eingangsbestätigung|we received your application|has been sent|bewerbung (ist )?eingegangen|"
     r"we.ve received your application|danke für dein interesse",
     re.I,
@@ -103,6 +107,9 @@ def _sender_display(sender: str) -> str:
 
 
 ROLE_PATTERNS = (
+    r"following role:\s*(.+?)\s+\d{6,}",
+    r"bewerbung als\s+(.+?)\s+\d{6,}\s+bekommen",
+    r"(?:applying|applied) for the\s+(.+?)\s+position",
     r"(?:auf die )?stelle(?: als)?\s+(.+?)\s+(?:bei|in|im)\s",
     r"bewerbung\s+(?:als|für die position|für)\s+(.+?)(?:\s+(?:bei|in)\s|[.,]|$)",
     r"application (?:for|as)(?: the)?\s+(.+?)(?:\s+(?:at|with|position|role)\b|[.,]|$)",
@@ -113,11 +120,12 @@ ROLE_PATTERNS = (
 
 
 def _role(subject: str, snippet: str = "") -> str:
-    for text in (subject, snippet):
-        for pat in ROLE_PATTERNS:
+    # specific patterns first, across both texts, so "Danke für dein Interesse" in a subject never beats the role in the body
+    for pat in ROLE_PATTERNS:
+        for text in (subject, snippet):
             if x := re.search(pat, text, re.I):
-                r = x[1].strip(" .,:;-")
-                if 2 < len(r) <= 90:
+                r = re.sub(r"\s+\d{6,}$", "", x[1].strip(" .,:;-"))
+                if 2 < len(r) <= 90 and not re.match(r"(dein|ihr|your|unser|our)\b", r, re.I):
                     return r
     return "Application"
 
@@ -168,8 +176,10 @@ def classify_message(m: dict) -> Event | None:
     low = sender.lower()
     mid, day = m.get("id", ""), _day(m)
 
+    preview = m.get("preview") or snippet
+
     def ev(company, role, status, note, source, check=False):
-        return Event(company.strip(" ."), role.strip(), status, day, note, check, mid, source, subject, _sender_display(sender), snippet[:240])
+        return Event(company.strip(" ."), role.strip(), status, day, note, check, mid, source, subject, _sender_display(sender), preview[:240])
 
     labels = set(m.get("labels") or [])
     if labels & SKIP_LABELS:  # your own sent mail, drafts, spam
@@ -233,16 +243,64 @@ def _norm(t: str) -> str:
     return re.sub(r"[^a-z0-9]", "", t)
 
 
+LOOSE_APPLICATION = re.compile(r"bewerbung|application|candidacy|candidature|applying", re.I)
+
+
+def needs_body(m: dict) -> bool:
+    """True when the preview alone cannot give the verdict, so the mail body should be read."""
+    sender, subject = (m.get("sender") or "").lower(), _clean(m.get("subject"))
+    blob = f"{subject} {_clean(m.get('snippet'))}"
+    if "linkedin.com" in sender or set(m.get("labels") or []) & SKIP_LABELS:
+        return False
+    if NOISE_SENDER.search(sender) or NOISE.search(subject) or NOISE_SUBJECT.search(subject) or EDU_SENDER.search(sender) or EDU.search(blob):
+        return False
+    ev = classify_message(m)
+    if ev and ev.status not in ("A", "U"):
+        return False
+    return bool(LOOSE_APPLICATION.search(blob))
+
+
+GENERIC_ROLES = {"application", "linkedin application", "role not named", ""}
+
+
+def _rolekey(role: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", re.sub(r"\(.*?\)", "", role.lower()))
+
+
+def _group(evs: list[Event]) -> list[tuple[str, list[Event]]]:
+    """One application per company and role. Mails that name no role join the matching role's group."""
+    specific = [e for e in evs if e.role.lower() not in GENERIC_ROLES]
+    generic = [e for e in evs if e.role.lower() in GENERIC_ROLES]
+    groups: list[list] = []  # [rolekey, events]
+    for e in specific:
+        k = _rolekey(e.role)
+        hit = next((g for g in groups if g[0] == k or (min(len(g[0]), len(k)) >= 6 and (g[0] in k or k in g[0]))), None)
+        if hit:
+            hit[1].append(e)
+        else:
+            groups.append([k, [e]])
+    if not groups:
+        return [("", generic)] if generic else []
+    for e in generic:
+        before = [g for g in groups if min(x.date for x in g[1]) <= e.date]
+        target = max(before, key=lambda g: min(x.date for x in g[1])) if before else min(groups, key=lambda g: min(x.date for x in g[1]))
+        target[1].append(e)
+    return [(g[0], g[1]) for g in groups]
+
+
 def build_applications(events: list[Event], now: datetime | None = None) -> list[dict]:
     """Group events per company (per role for StepStone, which hides the company)."""
     now = now or datetime.now(UTC)
-    groups: dict[str, list[Event]] = {}
+    by_company: dict[str, list[Event]] = {}
     for e in events:
-        key = _norm(e.company) + ("|" + _norm(e.role) if e.company == "Via StepStone" else "")
-        groups.setdefault(key, []).append(e)
+        by_company.setdefault(_norm(e.company), []).append(e)
+    groups: list[tuple[str, list[Event]]] = []
+    for ckey, cevs in by_company.items():
+        for rk, evs in _group(cevs):
+            groups.append((f"{ckey}|{rk}" if rk else ckey, evs))
 
     rows = []
-    for key, evs in groups.items():
+    for key, evs in groups:
         evs.sort(key=lambda e: (e.date, e.message_id))
         status, last = "", evs[0]
         seen_interview = False

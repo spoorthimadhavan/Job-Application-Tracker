@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from . import auth, demo, gmail, mailer, settings
-from .classify import build_applications, classify_message
+from .classify import build_applications, classify_message, needs_body
 
 app = FastAPI(title="Job Application Tracker")
 _cache: dict[str, tuple[float, dict]] = {}
@@ -109,7 +109,7 @@ async def applications(request: Request, since: str = ""):
         token = await auth.access_token(s)
         try:
             msgs = await gmail.list_messages(token, since.replace("-", "/"))
-            msgs = await gmail.enrich_truncated(token, msgs)
+            msgs = await gmail.enrich_truncated(token, msgs, needs_body)
         except Exception:
             raise HTTPException(502, "Gmail could not be read right now") from None
     events = [e for e in (classify_message(m) for m in msgs) if e]

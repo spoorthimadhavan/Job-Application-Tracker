@@ -118,16 +118,17 @@ def _plain(out: dict) -> str:
     return re.sub(r"\s+", " ", html.unescape(txt)).strip()
 
 
-async def enrich_truncated(token: str, msgs: list[dict]) -> list[dict]:
-    """Indeed's "news about your application" mails hide the decision after the snippet.
-    Fetch just those bodies so the verdict is read from the mail itself."""
-    todo = [m for m in msgs if "indeed" in (m.get("sender") or "").lower() and "neuigkeiten zu ihrer bewerbung" in (m.get("subject") or "").lower()]
+async def enrich_truncated(token: str, msgs: list[dict], needs_body, cap: int = 150) -> list[dict]:
+    """The preview often stops before the decision ("Thank you for applying ... we reviewed ...").
+    For mails where that matters, read the body and classify from it. The preview column keeps the short text."""
+    todo = [m for m in sorted(msgs, key=lambda x: x["date"], reverse=True) if needs_body(m)][:cap]
     if not todo:
         return msgs
     sem = asyncio.Semaphore(20)
     async with httpx.AsyncClient(timeout=30, headers={"Authorization": f"Bearer {token}"}) as c:
 
         async def one(m):
+            m["preview"] = m["snippet"]
             if m["id"] in _BODY_CACHE:
                 m["snippet"] = _BODY_CACHE[m["id"]]
                 return

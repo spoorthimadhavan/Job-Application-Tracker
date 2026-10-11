@@ -3,7 +3,7 @@ import sys
 from datetime import UTC, datetime
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "api"))
-from _lib.classify import build_applications, classify_message
+from _lib.classify import build_applications, classify_message, needs_body
 
 NOW = datetime(2026, 10, 10, tzinfo=UTC)
 
@@ -170,3 +170,47 @@ def test_indeed_role_company_sender_preview():
     assert (e.status, e.company, e.role) == ("R", "Acme GmbH & Co KG", "Personalberater Pädagogik (m/w/d)")
     row = build_applications([e], NOW)[0]
     assert row["sender"] == "Acme GmbH & Co KG" and row["preview"].startswith("Vielen Dank")
+
+
+def test_packmatic_body_rejection_and_linkedin_receipt_merge():
+    body = "Hello Spoorthi, Thank you very much for applying for the Software Engineer (w/m/d) - B2B Saas I Berlin (hybrid) position and for trusting our company! We reviewed your application materials carefully and were impressed. However, after careful consideration we have decided to move forward with other applicants."
+    rej = {**m("luise.schilling@packmatic.io", "Packmatic I Your Application", body), "date": "2026-10-07", "preview": body[:100]}
+    sent = {**m("jobs-noreply@linkedin.com", "Spoorthi, your application was sent to Packmatic", "x", id="2"), "date": "2026-10-05"}
+    rows = build_applications([classify_message(rej), classify_message(sent)], NOW)
+    assert len(rows) == 1 and rows[0]["status"] == "R" and rows[0]["company"] == "Packmatic"
+    assert rows[0]["role"].startswith("Software Engineer")
+
+
+def test_needs_body_for_truncated_receipt():
+    short = "Hello Spoorthi, Thank you very much for applying for the Software Engineer position and for trusting our company! We reviewed your application materials carefully"
+    assert needs_body(m("luise@packmatic.io", "Packmatic I Your Application", short))
+    assert not needs_body(m("jobs-noreply@linkedin.com", "Your application to X at Y"))
+
+
+def test_two_roles_same_company_stay_separate():
+    a = m(
+        "appleworldwiderecruiting@email.apple.com",
+        "Danke für dein Interesse an Apple.",
+        "gerade haben wir deinen Lebenslauf zusammen mit deiner Bewerbung als AIML - Frontend Engineer, Annotation Platform & Agentic UI Experiences 200680114 bekommen.",
+        id="1",
+    )
+    b = m(
+        "appleworldwiderecruiting@email.apple.com",
+        "Danke für dein Interesse an Apple.",
+        "gerade haben wir deinen Lebenslauf zusammen mit deiner Bewerbung als DevOps / Infrastructure Engineer — Firmware Validation (f/m/d) 200687419 bekommen.",
+        id="2",
+    )
+    rows = build_applications([classify_message(a), classify_message(b)], NOW)
+    assert len(rows) == 2
+    assert {r["role"] for r in rows} == {
+        "AIML - Frontend Engineer, Annotation Platform & Agentic UI Experiences",
+        "DevOps / Infrastructure Engineer — Firmware Validation (f/m/d)",
+    }
+
+
+def test_rejection_only_hits_its_own_role():
+    a = {**m("recruiting@acme.com", "Your application for Frontend Engineer", "We received your application", id="1"), "date": "2026-09-01"}
+    b = {**m("recruiting@acme.com", "Your application for Backend Engineer", "We received your application", id="2"), "date": "2026-09-02"}
+    c = {**m("recruiting@acme.com", "Your application for Frontend Engineer", "Unfortunately we will not move forward", id="3"), "date": "2026-09-10"}
+    rows = {r["role"]: r["status"] for r in build_applications([classify_message(x) for x in (a, b, c)], NOW)}
+    assert rows == {"Frontend Engineer": "R", "Backend Engineer": "A"}
