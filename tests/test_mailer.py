@@ -44,7 +44,7 @@ def test_callback_sends_welcome_once(client, monkeypatch):
     sent = []
 
     async def fake_exchange(request, code):
-        return {"email": "me@x.com", "access_token": "t", "refresh_token": "r", "exp": 9e9}
+        return {"email": "me@x.com", "access_token": "t", "refresh_token": "r", "exp": 9e9, "scope": "https://www.googleapis.com/auth/gmail.readonly"}
 
     async def fake_send(to):
         sent.append(to)
@@ -57,3 +57,14 @@ def test_callback_sends_welcome_once(client, monkeypatch):
     client.cookies.set(auth.STATE_COOKIE, "s")
     client.get("/api/auth/callback?code=c&state=s", follow_redirects=False)
     assert sent == ["me@x.com"]  # second login in same browser: marker cookie, no second mail
+
+
+def test_callback_without_gmail_scope_is_rejected(client, monkeypatch):
+    async def fake_exchange(request, code):
+        return {"email": "me@x.com", "access_token": "t", "exp": 9e9, "scope": "openid email"}
+
+    monkeypatch.setattr(auth, "exchange_code", fake_exchange)
+    client.cookies.set(auth.STATE_COOKIE, "s")
+    r = client.get("/api/auth/callback?code=c&state=s", follow_redirects=False)
+    assert r.headers["location"] == "/?login=scope"
+    assert auth.COOKIE not in r.headers.get("set-cookie", "")

@@ -34,7 +34,7 @@ export default function App() {
   const changeRange = (r) => { setRange(r); saveRange(r); };
 
   if (me === undefined) return <p className="center muted">Loading…</p>;
-  if (!signedIn) return <Login googleConfigured={me.google_configured} failed={location.search.includes("login=failed")} />;
+  if (!signedIn) return <Login googleConfigured={me.google_configured} failed={location.search.includes("login=failed")} scopeMissing={location.search.includes("login=scope")} />;
 
   const apps = data ? data.applications : [];
   const q = query.trim().toLowerCase();

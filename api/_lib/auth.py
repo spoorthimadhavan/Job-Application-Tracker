@@ -83,6 +83,7 @@ async def exchange_code(request: Request, code: str) -> dict:
         "refresh_token": tok.get("refresh_token"),
         "access_token": tok["access_token"],
         "exp": time.time() + tok.get("expires_in", 3000),
+        "scope": tok.get("scope", ""),
     }
 
 

@@ -56,6 +56,12 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
         tok = await auth.exchange_code(request, code)
     except Exception:
         return RedirectResponse("/?login=failed")
+    if "gmail.readonly" not in tok.get("scope", ""):
+        # Google lets people untick the Gmail box on the consent screen; without it every mailbox call fails with 403
+        bad = RedirectResponse("/?login=scope")
+        bad.delete_cookie(auth.STATE_COOKIE, path="/")
+        return bad
+    tok.pop("scope", None)
     resp = RedirectResponse("/")
     _set_session(resp, tok, request)
     resp.delete_cookie(auth.STATE_COOKIE, path="/")

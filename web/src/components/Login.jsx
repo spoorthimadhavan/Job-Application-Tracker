@@ -1,6 +1,6 @@
 const DEMO = Boolean(import.meta.env.VITE_DEMO);
 
-export default function Login({ googleConfigured, failed }) {
+export default function Login({ googleConfigured, failed, scopeMissing }) {
   return (
     <main className="login">
       <h1>Job Application Tracker</h1>
@@ -9,6 +9,11 @@ export default function Login({ googleConfigured, failed }) {
         application and its status.
       </p>
       {failed && <p className="banner">Sign-in did not complete. Please try again.</p>}
+      {scopeMissing && (
+        <p className="banner">
+          Gmail access was not granted. On Google's permission screen, tick the box "View your email messages and settings" before you press Continue.
+        </p>
+      )}
       {DEMO ? (
         <button className="btn" onClick={() => location.reload()}>Open the demo again</button>
       ) : googleConfigured ? (
