@@ -78,9 +78,8 @@ export default function App() {
       {error && <p className="banner">{error}</p>}
       {data && data.partial && <p className="banner">{data.progress ? `${data.progress.phase === "full text" ? "Checking full texts for the final status" : "Reading your mailbox"}… ${data.progress.done} of ${data.progress.total}. The list is usable already and gets corrected as it goes.` : "Still reading older mail…"}</p>}
       <StatTiles counts={merged.counts} total={apps.length} active={status} onPick={(s) => setStatus(status === s ? "all" : s)} />
-      <Toolbar query={query} onQuery={setQuery} sort={sort} onSort={setSort} range={range} onRange={changeRange} memberSince={me.member_since} />
+      <Toolbar query={query} onQuery={setQuery} sort={sort} onSort={setSort} range={range} onRange={changeRange} memberSince={me.member_since} canDownload={!!data && !data.partial} onDownload={() => downloadCsv(apps)} />
       <ApplicationList apps={shown} total={apps.length} loading={!data} docs={docs} onOpen={(a) => setOpen(a.id)} />
-      {data && !data.partial && <p className="muted"><button type="button" className="linklike" onClick={() => downloadCsv(apps)}>Download as CSV</button></p>}
       {open && apps.find((a) => a.id === open) && <EmailDrawer application={apps.find((a) => a.id === open)} onStatus={setManual} email={me.email} onDocsChange={refreshDocs} onClose={() => setOpen(null)} />}
     </div>
   );

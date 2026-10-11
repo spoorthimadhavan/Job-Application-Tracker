@@ -35,3 +35,15 @@ describe("Toolbar", () => {
     expect(onSort).toHaveBeenCalledWith("company");
   });
 });
+
+describe("Toolbar download", () => {
+  const base = { query: "", onQuery() {}, sort: "newest", onSort() {}, range: { choice: "3m", custom: "" }, onRange() {} };
+  it("is disabled with a hint until the list is completely loaded", () => {
+    const { rerender } = render(<Toolbar {...base} canDownload={false} onDownload={() => {}} />);
+    const btn = screen.getByRole("button", { name: "Download CSV" });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute("title", expect.stringMatching(/wait/i));
+    rerender(<Toolbar {...base} canDownload onDownload={() => {}} />);
+    expect(screen.getByRole("button", { name: "Download CSV" })).toBeEnabled();
+  });
+});

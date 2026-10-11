@@ -1,6 +1,6 @@
 import { PRESETS } from "../range.js";
 
-export default function Toolbar({ query, onQuery, sort, onSort, range, onRange, memberSince }) {
+export default function Toolbar({ query, onQuery, sort, onSort, range, onRange, memberSince, canDownload = false, onDownload }) {
   const today = new Date().toISOString().slice(0, 10);
   return (
     <div className="tools">
@@ -23,6 +23,15 @@ export default function Toolbar({ query, onQuery, sort, onSort, range, onRange, 
         <option value="oldest">Oldest first</option>
         <option value="company">Company A to Z</option>
       </select>
+      <button
+        type="button"
+        className="download"
+        disabled={!canDownload}
+        onClick={onDownload}
+        title={canDownload ? "Download the list as a CSV file" : "Please wait for the list to be completely loaded"}
+      >
+        Download CSV
+      </button>
     </div>
   );
 }
