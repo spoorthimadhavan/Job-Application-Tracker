@@ -9,6 +9,7 @@ import ApplicationList from "./components/ApplicationList.jsx";
 import { listDocs } from "./docs.js";
 import { loadRange, saveRange, sinceFor } from "./range.js";
 import EmailDrawer from "./components/EmailDrawer.jsx";
+import { downloadCsv } from "./exportCsv.js";
 import { applyOverrides, loadOverrides, saveOverrides } from "./overrides.js";
 
 export default function App() {
@@ -79,6 +80,7 @@ export default function App() {
       <StatTiles counts={merged.counts} total={apps.length} active={status} onPick={(s) => setStatus(status === s ? "all" : s)} />
       <Toolbar query={query} onQuery={setQuery} sort={sort} onSort={setSort} range={range} onRange={changeRange} memberSince={me.member_since} />
       <ApplicationList apps={shown} total={apps.length} loading={!data} docs={docs} onOpen={(a) => setOpen(a.id)} />
+      {data && !data.partial && <p className="muted"><button type="button" className="linklike" onClick={() => downloadCsv(apps)}>Download as CSV</button></p>}
       {open && apps.find((a) => a.id === open) && <EmailDrawer application={apps.find((a) => a.id === open)} onStatus={setManual} email={me.email} onDocsChange={refreshDocs} onClose={() => setOpen(null)} />}
     </div>
   );
