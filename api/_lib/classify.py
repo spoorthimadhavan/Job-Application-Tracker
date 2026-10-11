@@ -23,8 +23,11 @@ REJECT = re.compile(
     re.I,
 )
 INTERVIEW = re.compile(
-    r"interview|vorstellungsgespräch|kennenlerngespräch|einladung zum gespräch|assessment|"
-    r"terminvorschlag|next step|nächsten schritt.*(gespräch|call)|invite you to",
+    r"vorstellungsgespräch|kennenlerngespräch|einladung zum (gespräch|interview|telefoninterview)|"
+    r"(invite|inviting|invitation).{0,40}(interview|call|chat|assessment)|"
+    r"(schedule|book|arrange).{0,30}interview|interview (invitation|invite|request|slot|appointment)|"
+    r"technical (assessment|interview)|coding (challenge|test)|take-home|terminvorschlag|"
+    r"nächsten schritt.{0,40}(gespräch|call|interview)",
     re.I,
 )
 RECEIPT = re.compile(
@@ -39,7 +42,31 @@ NOISE = re.compile(
     r"similar to|expiring|recommended|saved jobs|could be a match|jetzt bewerben|top choice",
     re.I,
 )
-NOISE_SENDER = re.compile(r"jobalerts|jobagent|match\.indeed|newsletter|marketing|nebenan|news@|promo", re.I)
+NOISE_SENDER = re.compile(
+    r"jobalerts|jobagent|match\.indeed|newsletter|marketing|nebenan|news@|promo|"
+    r"lists?\.|-request@|mailman|noreply@github|notifications@(vercel|github)|glassdoor|wearedevelopers|"
+    r"interviewcake|tryexponent|techprep|codemia|kajabi|scienceofpeople|unstop|lieferando|bajajfinance",
+    re.I,
+)
+# Training / career-course sales ("Thanks for applying to our program") are not job applications
+EDU_SENDER = re.compile(r"cybersteps|dsinstitute|stackfuel|edvalo|weiterbildung|startplatz|bootcamp|academy|akademie|institut", re.I)
+EDU = re.compile(
+    r"weiterbildung|bildungsgutschein|umschulung|bootcamp|training (program|course)|our (\w+ )?program|"
+    r"career coach|karrierebegleitung|karriere-?coach|azav|agentur für arbeit|bundesagentur|webinar|masterclass|curriculum|"
+    r"telefontermin|kompetenzanalyse|online-rundgang",
+    re.I,
+)
+NOISE_SUBJECT = re.compile(r"digest|weekly problem|unsubscribe|webinar|your .{0,20}voucher|discount", re.I)
+# Mail folders Gmail itself files as not-personal
+SKIP_LABELS = {"SENT", "DRAFT", "SPAM", "TRASH"}
+BULK_LABELS = {"CATEGORY_PROMOTIONS", "CATEGORY_FORUMS", "CATEGORY_SOCIAL"}
+# The mail must talk about an application / position, not just mention a keyword
+APPLICATION_CONTEXT = re.compile(
+    r"(your|ihre|ihr|deine|dein)\s+(application|bewerbung|candidacy|candidature)|"
+    r"application\s+(for|to|as|status|was|has|process|materials)|bewerbung\s+(als|auf|bei|für|zur|ist|wurde)|"
+    r"(applying|applied)\s+(for|to)|position|\bstelle\b|vacanc|\brole\s+(of|at)\b|junior|senior|engineer|developer|entwickler",
+    re.I,
+)
 
 
 @dataclass
@@ -108,7 +135,10 @@ def classify_message(m: dict) -> Event | None:
     def ev(company, role, status, note, source, check=False):
         return Event(company.strip(" ."), role.strip(), status, day, note, check, mid, source, subject)
 
-    if NOISE_SENDER.search(low) or NOISE.search(subject):
+    labels = set(m.get("labels") or [])
+    if labels & SKIP_LABELS:  # your own sent mail, drafts, spam
+        return None
+    if NOISE_SENDER.search(low) or NOISE.search(subject) or NOISE_SUBJECT.search(subject):
         return None
 
     if "linkedin.com" in low:
@@ -142,7 +172,9 @@ def classify_message(m: dict) -> Event | None:
         return None
 
     blob = f"{subject} {snippet}"
-    context = re.search(r"bewerbung|application|candidacy|position|stelle|role", blob, re.I)
+    if labels & BULK_LABELS or EDU_SENDER.search(low) or EDU.search(blob):
+        return None
+    context = APPLICATION_CONTEXT.search(blob)
     company = _company_from_sender(sender)
     role = (re.search(r"(?:als|for|für)\s+(?:the\s+)?(.+?)(?:\s+(?:bei|at|position|role)\b|$)", subject, re.I) or [None, "Application"])[1]
     role = role[:90]

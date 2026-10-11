@@ -29,6 +29,10 @@ def _iso(msg: dict) -> str:
         return datetime.fromtimestamp(int(msg.get("internalDate", 0)) / 1000, UTC).isoformat()
 
 
+_CACHE: dict[str, dict] = {}  # message metadata never changes, so warm instances skip refetching
+_CACHE_MAX = 3000
+
+
 async def list_messages(token: str, since: str, limit: int = 500) -> list[dict]:
     h = {"Authorization": f"Bearer {token}"}
     ids, page = [], None
@@ -44,18 +48,36 @@ async def list_messages(token: str, since: str, limit: int = 500) -> list[dict]:
             page = data.get("nextPageToken")
             if not page:
                 break
-        sem = asyncio.Semaphore(12)
+        sem = asyncio.Semaphore(40)
 
         async def one(i):
+            if i in _CACHE:
+                return _CACHE[i]
             async with sem:
                 r = await c.get(
                     f"{API}/messages/{i}",
                     params=[("format", "metadata"), ("metadataHeaders", "From"), ("metadataHeaders", "Subject"), ("metadataHeaders", "Date")],
                 )
-                return r.json() if r.status_code == 200 else None
+                if r.status_code != 200:
+                    return None
+                if len(_CACHE) >= _CACHE_MAX:
+                    _CACHE.clear()
+                _CACHE[i] = r.json()
+                return _CACHE[i]
 
         raw = await asyncio.gather(*[one(i) for i in ids[:limit]])
-    return [{"id": m["id"], "sender": _hdr(m, "from"), "subject": _hdr(m, "subject"), "snippet": m.get("snippet", ""), "date": _iso(m)} for m in raw if m]
+    return [
+        {
+            "id": m["id"],
+            "sender": _hdr(m, "from"),
+            "subject": _hdr(m, "subject"),
+            "snippet": m.get("snippet", ""),
+            "date": _iso(m),
+            "labels": m.get("labelIds", []),
+        }
+        for m in raw
+        if m
+    ]
 
 
 def _walk(part: dict, out: dict):

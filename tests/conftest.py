@@ -13,3 +13,16 @@ def client():
 def demo_client(client):
     client.get("/api/auth/demo", follow_redirects=False)
     return client
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _clear_gmail_cache():
+    import sys
+
+    mod = sys.modules.get("_lib.gmail")
+    if mod:
+        mod._CACHE.clear()
+    yield

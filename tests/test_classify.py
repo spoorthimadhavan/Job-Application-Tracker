@@ -113,3 +113,46 @@ def test_exactly_six_weeks_is_still_applied():
     d2 = (NOW - timedelta(days=43)).date().isoformat()
     e2 = classify_message(m("jobs-noreply@linkedin.com", "Your application was sent to Edge", date=d2))
     assert build_applications([e2], NOW)[0]["status"] == "N"
+
+
+def ml(sender, subject, snippet="", labels=()):
+    return {**m(sender, subject, snippet), "labels": list(labels)}
+
+
+def test_sent_drafts_and_spam_labels_ignored():
+    for label in ("SENT", "DRAFT", "SPAM", "TRASH"):
+        assert classify_message(ml("me@x.com", "Application for Software Engineer", "your application", [label])) is None
+
+
+def test_promotions_and_forums_ignored():
+    for label in ("CATEGORY_PROMOTIONS", "CATEGORY_FORUMS", "CATEGORY_SOCIAL"):
+        assert classify_message(ml("hr@acme.com", "Your application for Developer", "thanks for applying", [label])) is None
+
+
+def test_training_sales_ignored():
+    assert classify_message(m("team@cybersteps.de", "Thanks for applying to our Cybersecurity Program", "your application")) is None
+    assert classify_message(m("hello@someinstitut.de", "Bewerbung als Entwickler: Bildungsgutschein", "Weiterbildung mit AZAV")) is None
+
+
+def test_mailing_list_digest_ignored():
+    assert classify_message(m("dev-request@lists.example.org", "Weekly digest", "senior developer position")) is None
+    assert classify_message(m("hello@news.example.com", "Weekly problem: senior engineer interview", "")) is None
+
+
+def test_prep_newsletters_and_notifications_ignored():
+    assert classify_message(m("hello@interviewcake.com", "Your coding interview", "technical interview tips")) is None
+    assert classify_message(m("notifications@vercel.com", "Deployment failed", "interview")) is None
+    assert classify_message(m("noreply@github.com", "Run failed", "your application")) is None
+
+
+def test_real_templates_still_work():
+    rej = classify_message(
+        m("hr@acme.de", "Ihre Bewerbung als Entwickler", "müssen wir dir leider mitteilen, dass wir uns für andere Kandidaten entschieden haben")
+    )
+    assert rej.status == "R"
+    rej2 = classify_message(m("hr@acme.com", "Your application for Backend Engineer", "We regret to inform you that we have chosen other candidates"))
+    assert rej2.status == "R"
+    rec = classify_message(m("no-reply@join.com", "Your application for Backend Engineer at Acme", "We received your application"))
+    assert rec.status in ("A", "U")
+    iv = classify_message(m("hr@acme.com", "Invitation to interview for Backend Engineer", "We would like to invite you to an interview"))
+    assert iv.status == "S"

@@ -8,6 +8,14 @@ export default function ApplicationList({ apps, total, loading, docs, onOpen }) 
       <p className="count muted">{apps.length} of {total} applications. Click a row to see the email.</p>
       <div className="list">
         {!apps.length && <p className="muted pad">Nothing matches. Clear the search or pick another status.</p>}
+        {!!apps.length && (
+          <div className="row head" aria-hidden="true">
+            <span>Date</span>
+            <span>Company</span>
+            <span>Job title</span>
+            <span>Status</span>
+          </div>
+        )}
         {apps.map((a) => (
           <button key={a.id} className="row" onClick={() => onOpen(a)}>
             <span className="d">{formatDate(a.date)}</span>
