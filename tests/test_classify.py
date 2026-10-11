@@ -325,3 +325,27 @@ def test_junk_is_never_used_as_job_title():
 def test_mail_without_a_date_does_not_break_grouping():
     e = classify_message({**m("jobs-noreply@linkedin.com", "Your application to Dev at Foo GmbH"), "date": ""})
     assert e.date and build_applications([e], NOW)[0]["company"] == "Foo GmbH"
+
+
+def test_multitenant_platform_does_not_merge_companies():
+    a = classify_message(
+        m("Rheinmetall <no-reply@rheinmetall.recruitmail.com>", "Ihre Bewerbung als Webentwickler (m/w/d)", "Vielen Dank für Ihre Bewerbung bei Rheinmetall.", id="1")
+    )
+    b = classify_message(
+        m(
+            "ERGO <no-reply@ergo.recruitmail.com>",
+            "Wir haben Ihre Bewerbung auf die Stellenausschreibung Software Engineer (m/w/d) ERGO02319 erhalten",
+            "Ihre Bewerbung bei ITERGO. Sobald Ihre Unterlagen geprüft sind, folgt bei Interesse die Einladung zu einem Interview.",
+            id="2",
+        )
+    )
+    assert a.company != b.company
+    assert b.status == "A"
+    assert b.role == "Software Engineer (m/w/d)"
+
+
+def test_recruitmail_company_from_text():
+    e = classify_message(
+        m("noreply@recruitmail.com", "Eingangsbestätigung", "Vielen Dank für Ihre Bewerbung bei Rheinmetall. Wir haben Ihre Bewerbung erhalten.")
+    )
+    assert e.company == "Rheinmetall" and e.status == "A"

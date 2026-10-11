@@ -37,8 +37,13 @@ RECEIPT = re.compile(
     r"application was sent|thank you.{0,20}for applying|for applying (for|to) the|thank you for (your )?appl|thanks for appl|"
     r"vielen dank für (ihre|deine) bewerbung|"
     r"eingangsbestätigung|we received your application|has been sent|bewerbung (ist )?eingegangen|"
-    r"we.ve received your application|danke für dein interesse",
+    r"we.ve received your application|danke für dein interesse|"
+    r"wir haben (ihre|deine) bewerbung.{0,160}(erhalten|empfangen)|(ihre|deine) bewerbung ist (bei uns )?(angekommen|eingegangen)|bewerbung.{0,40}angekommen",
     re.I,
+)
+# "Sobald ... folgt ... die Einladung zu einem Interview" is a promise, not an invitation
+CONDITIONAL_INVITE = re.compile(
+    r"\b(sobald|falls|wenn|sofern|once|if|should|in case|as soon as)\b.{0,220}(einladung|interview|gespräch|invit|call)", re.I | re.S
 )
 ACCOUNT = re.compile(r"account (wurde )?(erfolgreich )?(erstellt|created)|one-time passcode|konto.*erstellt", re.I)
 NOISE = re.compile(
@@ -80,7 +85,7 @@ APPLICATION_CONTEXT = re.compile(
 
 
 # Bump when the rules change: browsers keep classified mail and drop it when this differs.
-RULES_VERSION = "2026-10-11b"
+RULES_VERSION = "2026-10-11c"
 
 
 @dataclass
@@ -132,6 +137,7 @@ JUNK_ROLE = re.compile(
 
 
 SUBJECT_ROLE_PATTERNS = (
+    r"stellenausschreibung[\s\-:–]*[\"„“]?(.+?)[\"“”]?(?:\s+[A-Z]{2,}\d{3,})?(?:\s+erhalten)?\s*$",
     r"(?:auf )?die stelle[\s\-:–]*[\"„“]?(.+?)[\"“”]?\s*$",
     r"bewerbung (?:auf|für) (?:die |den )?(?:position|stelle)?[\s\-:–]*[\"„“]?(.+?)[\"“”]?\s*$",
 )
@@ -177,6 +183,22 @@ ATS = {
     "teamtailor",
     "softgarden",
     "d-vinci",
+    "recruitmail",
+    "rexx-systems",
+    "rexx",
+    "onlyfy",
+    "prescreen",
+    "kenjo",
+    "hirehive",
+    "jobvite",
+    "myworkday",
+    "workday",
+    "taleo",
+    "cornerstone",
+    "umantis",
+    "bamboohr",
+    "breezy",
+    "pinpointhq",
 }
 SUBDOMAINS = {"m", "mail", "email", "info", "jobs", "e", "msg", "talent", "hire", "notifications", "mg", "em"}
 
@@ -208,9 +230,14 @@ def _company_from_text(text: str) -> str:
     for pat in (
         r"(?:position|role|stelle)\b.{0,80}?\b(?:at|bei(?: der| dem)?)\s+([A-Z][\w&.\- ]{1,40}?)(?:[.,!]|\s+(?:We|Wir|and|und)\b|$)",
         r"interest in ([A-Z][\w&.\-]+)!",
+        r"(?i:bewerbung|interesse)\s+(?:bei|für|an)\s+(?:der |dem )?([A-ZÄÖÜ][\w&.\-]+(?: [A-ZÄÖÜ][\w&.\-]+)?)(?=[\s.,!]|$)",
+        r"\b(?i:bei)\s+(?:der |dem )?([A-ZÄÖÜ][\w&.\-]+(?: [A-ZÄÖÜ][\w&.\-]+)?)\s+(?:als|beworben)\b",
+        r"\b(?:apply|applying|applied|application)\s+(?:to|at|with)\s+([A-Z][\w&.\-]+(?: [A-Z][\w&.\-]+)?)(?=[\s.,!]|$)",
+        r"\b(?:Ihr|Dein|Ihre|Deine)\s+([A-Z][\w&.\-]+)[\s-]*(?:Team|Recruiting|Karriere)",
+        r"\b(?:Team|Recruiting) (?:von|der|bei) ([A-ZÄÖÜ][\w&.\-]+)",
     ):
         if x := re.search(pat, text):
-            return x[1].strip()
+            return re.split(r"\.\s", x[1].strip())[0].rstrip(".")
     return ""
 
 
@@ -231,6 +258,13 @@ def _company_from_sender(sender: str, subject: str = "", text: str = "") -> str:
             if nn not in nd and nd not in nn:
                 return _domain_company(dom)
         elif found := _company_from_text(f"{subject} {text}"):
+            return found
+    if key in ATS and not (name and len(GENERIC.sub("", name).strip(" -|,.")) > 1):
+        # multi-tenant platform (acme.recruitmail.com, careers.acme.personio.de): tenant first, then the company named in the text
+        tenant = [p for p in base[:-1] if p not in ATS]
+        if tenant:
+            return tenant[-1].title()
+        if found := _company_from_text(f"{subject} {text}"):
             return found
     if name:
         n = re.sub(r"\s+", " ", GENERIC.sub("", name)).strip(" -|,.")
@@ -300,7 +334,7 @@ def classify_message(m: dict) -> Event | None:
     role = _role(subject, snippet)
     if context and REJECT.search(snippet):
         return ev(company, role, "R", "Rejection email.", "email", True)
-    if context and INTERVIEW.search(blob):
+    if context and INTERVIEW.search(blob) and not CONDITIONAL_INVITE.search(blob):
         return ev(company, role, "S", "Interview or next-step invite.", "email", True)
     if RECEIPT.search(blob):
         return ev(company, role, "A", "Receipt.", "email")
