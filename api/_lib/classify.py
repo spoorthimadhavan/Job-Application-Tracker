@@ -22,7 +22,22 @@ REJECT = re.compile(
     r"move (forward|ahead) with other|moving (forward|ahead) with other|chosen to move ahead|pursue other (candidates|applicants)|"
     r"not (been )?selected|not be (proceeding|moving)|not shortlisted|position (has been|was) filled|not successful|"
     r"nicht in die engere|haben uns für (einen )?andere|anderen (bewerber|kandidat)|nicht berücksichtigt|konnte (ihre|deine) bewerbung|"
-    r"nicht weiter(verfolgen|geführt)|müssen wir (ihnen|dir) (leider )?mitteilen",
+    r"nicht weiter(verfolgen|geführt)|müssen wir (ihnen|dir) (leider )?mitteilen|"
+    r"(move|moving|proceed|proceeding|go|going|continue|continuing) (forward )?with (another|a different|someone|different|other|one of)|"
+    r"(decided|chosen|opted) to (pursue|proceed|move|go|continue)|will not (be )?(move|moving|proceed|continu)|not move you|"
+    r"(für|mit) (einen? )?(andere[nr]?|anderen) (kandidat|bewerber)|anderen (kandidat|bewerber)|nicht (weiter )?berücksichtig|"
+    r"(haben|hat) sich (für|zugunsten).{0,40}(entschieden|andere)|keine zusage|not (a )?(fit|match) for|unable to (offer|move|proceed)",
+    re.I,
+)
+REJECT_STRONG = re.compile(REJECT.pattern.replace("leider|unfortunately|regret|", "", 1), re.I)
+INCOMPLETE = re.compile(
+    r"nicht (noch )?vollständig|noch nicht abgeschlossen|unvollständig|incomplete|not (yet )?(completed|finished) (your )?application|"
+    r"complete your application|bewerbung (jetzt )?abschließen|finish your application",
+    re.I,
+)
+RECEIPT_SUBJECT = re.compile(
+    r"thank you for (submitting|applying|your application|sending)|thanks for applying|eingangsbestätigung|we.ve received|received your application|"
+    r"(vielen )?dank für (ihre|deine) bewerbung|bewerbung (ist )?(eingegangen|erhalten)|bestätigung",
     re.I,
 )
 INTERVIEW = re.compile(
@@ -55,7 +70,7 @@ NOISE = re.compile(
 NOISE_SENDER = re.compile(
     r"jobalerts|jobagent|match\.indeed|newsletter|marketing|nebenan|news@|promo|"
     r"lists?\.|-request@|mailman|noreply@github|notifications@(vercel|github)|glassdoor|wearedevelopers|"
-    r"interviewcake|tryexponent|techprep|codemia|kajabi|scienceofpeople|unstop|lieferando|bajajfinance",
+    r"interviewcake|tryexponent|techprep|codemia|kajabi|scienceofpeople|unstop|lieferando|bajajfinance|cbp\.dhs\.gov|starred\.com",
     re.I,
 )
 # Training / career-course sales ("Thanks for applying to our program") are not job applications
@@ -66,7 +81,10 @@ EDU = re.compile(
     r"telefontermin|kompetenzanalyse|online-rundgang",
     re.I,
 )
-NOISE_SUBJECT = re.compile(r"digest|weekly problem|unsubscribe|webinar|your .{0,20}voucher|discount", re.I)
+NOISE_SUBJECT = re.compile(
+    r"digest|weekly problem|unsubscribe|webinar|your .{0,20}voucher|discount|clipping agency|esta application|friendly reminder: (your experience|how did we)",
+    re.I,
+)
 # Mail folders Gmail itself files as not-personal
 SKIP_LABELS = {"SENT", "DRAFT", "SPAM", "TRASH"}
 BULK_LABELS = {"CATEGORY_PROMOTIONS", "CATEGORY_FORUMS", "CATEGORY_SOCIAL"}
@@ -86,7 +104,7 @@ APPLICATION_CONTEXT = re.compile(
 
 
 # Bump when the rules change: browsers keep classified mail and drop it when this differs.
-RULES_VERSION = "2026-10-11d"
+RULES_VERSION = "2026-10-11e"
 
 
 @dataclass
@@ -102,6 +120,7 @@ class Event:
     subject: str
     sender: str = ""
     snippet: str = ""
+    weak: bool = False  # the company is only a guess (a person's name or a platform): may join a stronger match by role
 
 
 def _clean(t: str | None) -> str:
@@ -117,6 +136,8 @@ def _sender_display(sender: str) -> str:
 
 
 ROLE_PATTERNS = (
+    r"stelle als\s+(.+?)\s*\(ID\b",
+    r"bewerbung:\s*(.+?)\s+(?:ID\s*\d+\s+)?bei\s",
     r"interest in the\s+(.+?)\s+(?:position|role)\b",
     r"position als\s+(.+?)\s+(?:in|bei|am|im)\s",
     r"following role:\s*(.+?)\s+\d{6,}",
@@ -132,7 +153,8 @@ ROLE_PATTERNS = (
     r"position as(?: an?)?\s+(.+?)(?:\s+(?:at|with)\b|[.!,]|$)",
 )
 JUNK_ROLE = re.compile(
-    r"^(als|as|soon|applying|your|dein|ihre?|for|für|the|a)\b|as possible|erhalten|freuen|speak to|interest|interesse|thank|danke|!|^\W*$",
+    r"^(als|as|soon|applying|your|dein|ihre?|for|für|the|a|an|this|that|our|unsere?|one)\b|as possible|erhalten|freuen|speak to|"
+    r"interest|interesse|thank|danke|!|^\W*$",
     re.I,
 )
 
@@ -152,7 +174,7 @@ def _role(subject: str, snippet: str = "") -> str:
     for pat in ROLE_PATTERNS:
         for text in (subject, snippet):
             if x := re.search(pat, text, re.I):
-                r = re.sub(r"\s+\d{6,}$", "", x[1].strip(" .,:;-…"))
+                r = re.sub(r"\s+(?:ID\s*[:\-]?\s*)?\d{5,}$", "", x[1].strip(" .,:;-…"))
                 if 2 < len(r) <= 90 and not JUNK_ROLE.search(r):
                     return r
     return "Application"
@@ -210,7 +232,30 @@ COMPANY_WORDS = re.compile(
     r"software|technologies|digital|partners|talent|people|culture)\b",
     re.I,
 )
-PERSON = re.compile(r"[A-ZÄÖÜ][a-zäöüß'’-]+(?: [A-ZÄÖÜ][a-zäöüß'’-]+){1,2}")
+PERSON = re.compile(r"[A-ZÄÖÜ][a-zäöüß'’-]+(?: [A-ZÄÖÜ][a-zäöüß'’-]+){1,2}|[A-ZÄÖÜ][a-zäöüß'’-]+, [A-ZÄÖÜ][a-zäöüß'’-]+")
+STOP_COMPANY = {
+    "people",
+    "system",
+    "position",
+    "besetzung",
+    "hiring",
+    "recruiting",
+    "jobs",
+    "career",
+    "careers",
+    "karriere",
+    "hr",
+    "info",
+    "service",
+    "support",
+    "team",
+    "bewerbung",
+    "moin",
+}
+
+
+def _weak_company(c: str) -> bool:
+    return bool(PERSON.fullmatch(c.strip())) or c.strip().lower() in STOP_COMPANY or "@" in c
 
 
 def _sender_parts(sender: str) -> tuple[str, str, str]:
@@ -244,8 +289,18 @@ def _company_from_text(text: str) -> str:
 
 def _company_from_sender(sender: str, subject: str = "", text: str = "") -> str:
     name, local, dom = _sender_parts(sender)
-    # "Packmatic | Your Application", "Bridger I Update on your process": the company is the prefix
-    if x := re.match(r"\s*([A-Z][\w&.\-]*(?: [A-Z][\w&.\-]*){0,2})\s+[|I]\s+\S", subject):
+    if "@" in name:
+        name = ""
+    if " from " in name:  # "Emilia Lorenz from ABOUT YOU SE & Co. KG"
+        name = name.split(" from ", 1)[1]
+    if x := re.match(r"[A-ZÄÖÜ][a-zäöüß'’-]+ [A-ZÄÖÜ][a-zäöüß'’-]+\s[-–]\s(.+)$", name):  # "Winnie Cai - Everyman Health"
+        name = x[1]
+    # "Packmatic | Your Application", "Bridger I Update on your process", "FOM - Ihre Bewerbung": the company is the prefix
+    if x := re.match(
+        r"\s*(?!Your|Ihre|Deine?|AW|Re\b|Thank|Danke|Neuigkeiten)([A-Z][\w&.\-]*(?: [A-Z][\w&.\-]*){0,2})\s+"
+        r"(?:[|I]|[-–](?=\s+(?:Ihre|Deine?|Your|Application|Bewerbung|Feedback|Thank)))\s+\S",
+        subject,
+    ):
         return x[1]
     base = dom.split(".")[:-1]
     base = [p for p in base if p not in SUBDOMAINS]
@@ -258,19 +313,23 @@ def _company_from_sender(sender: str, subject: str = "", text: str = "") -> str:
             nn, nd = _norm(name), _norm(key)
             if nn not in nd and nd not in nn:
                 return _domain_company(dom)
-        elif found := _company_from_text(f"{subject} {text}"):
+        elif found := _company_from_text(subject) or _company_from_text(f"{subject} {text}"):
             return found
     if key in ATS and not (name and len(GENERIC.sub("", name).strip(" -|,.")) > 1):
         # multi-tenant platform (acme.recruitmail.com, careers.acme.personio.de): tenant first, then the company named in the text
         tenant = [p for p in base[:-1] if p not in ATS]
         if tenant:
             return tenant[-1].title()
-        if found := _company_from_text(f"{subject} {text}"):
+        if found := _company_from_text(subject) or _company_from_text(f"{subject} {text}"):
             return found
     if name:
-        n = re.sub(r"\s+", " ", GENERIC.sub("", name)).strip(" -|,.")
-        if len(n) > 1:
+        n = re.sub(r"\(.*?\)|do not reply!?", "", name, flags=re.I)
+        n = re.sub(r"\s+", " ", GENERIC.sub("", n)).strip(" -|,.!@()")
+        n = re.sub(r"^(von|bei|from|at)\s+", "", n, flags=re.I).strip(" -|,.!@()")
+        if len(n) > 1 and n.lower() not in STOP_COMPANY:
             return n
+        if not ats_or_free:
+            return _domain_company(dom)
     if key in ATS:
         key = GENERIC.sub("", re.sub(r"[-_.]", " ", local)).strip() or key
     return key.strip().title()
@@ -284,8 +343,10 @@ def classify_message(m: dict) -> Event | None:
 
     preview = _clean(m.get("preview")) or snippet
 
+    weak = False
+
     def ev(company, role, status, note, source, check=False):
-        return Event(company.strip(" ."), role.strip(), status, day, note, check, mid, source, subject, _sender_display(sender), preview[:240])
+        return Event(company.strip(" ."), role.strip(), status, day, note, check, mid, source, subject, _sender_display(sender), preview[:240], weak)
 
     labels = set(m.get("labels") or [])
     if labels & SKIP_LABELS:  # your own sent mail, drafts, spam
@@ -299,7 +360,7 @@ def classify_message(m: dict) -> Event | None:
         if x := re.search(r"your application was sent to (.+)$", subject, re.I):
             return ev(x[1], "LinkedIn application", "A", "LinkedIn.", "linkedin")
         if x := re.search(r"your application was viewed by (.+)$", subject, re.I):
-            return ev(x[1], "LinkedIn application", "U", "LinkedIn: your application was viewed.", "linkedin")
+            return ev(x[1], "LinkedIn application", "A", "LinkedIn: your application was viewed. No answer yet.", "linkedin")
         return None
 
     if "indeed" in low:
@@ -309,6 +370,8 @@ def classify_message(m: dict) -> Event | None:
             if INTERVIEW.search(snippet):
                 return ev(x[1], _role("", snippet), "S", "Indeed: next step.", "indeed")
             return ev(x[1], _role("", snippet), "U", "Indeed update, open the email for the decision.", "indeed", True)
+        if x := re.match(r"Bewerbung über Indeed:\s*(.+?)(?:\s+(?:Willkommen|Welcome)!?)?\s*$", subject):
+            return ev("Via Indeed", x[1], "A", "Indeed: application sent. Company not shown.", "indeed")
         return None
 
     if "stepstone" in low:
@@ -318,12 +381,20 @@ def classify_message(m: dict) -> Event | None:
         if x := re.search(r"your application for (.+?) has been sent", subject, re.I):
             return ev("Via StepStone", x[1], "A", "StepStone. Company not shown.", "stepstone")
         if x := re.search(r"Ihre Bewerbung bei (.+?) wurde angesehen", subject):
-            return ev(x[1], "Application", "U", "StepStone: your application was viewed.", "stepstone")
+            return ev(x[1], "Application", "A", "StepStone: your application was viewed. No answer yet.", "stepstone")
         if x := re.search(r"Update on your application for the role of (.+?) with (.+)$", subject):
             return ev(x[2], x[1], "R" if REJECT.search(snippet) else "U", "StepStone feedback.", "stepstone", True)
         return None
 
     blob = f"{subject} {snippet}"
+    if "amazon.jobs" in low:
+        # Amazon: one mail template per step; the role (with its ID) is named in the text
+        role_a = _role("", snippet) or "Application"
+        if re.search(r"vorstellungsgespräch|interview|assessment", blob, re.I) and re.search(r"möchte|laden|invite|schedule|terminieren|einladung", blob, re.I):
+            return ev("Amazon", role_a, "S", "Amazon: interview or assessment.", "email")
+        if REJECT.search(blob) or re.search(r"sorgfältiger prüfung.{0,200}(haben wir uns|entschieden)|after careful (review|consideration)", blob, re.I):
+            return ev("Amazon", role_a, "R", "Amazon: rejection.", "email", True)
+        return ev("Amazon", role_a, "A", "Amazon: application or status mail.", "email")
     if EDU_SENDER.search(low) or EDU.search(blob):
         return None
     context = APPLICATION_CONTEXT.search(blob)
@@ -332,8 +403,14 @@ def classify_message(m: dict) -> Event | None:
     if labels & BULK_LABELS and not PERSONAL_APPLICATION.search(blob):
         return None
     company = _company_from_sender(sender, subject, snippet)
+    weak = _weak_company(company)
     role = _role(subject, snippet)
-    if context and REJECT.search(snippet):
+    if INCOMPLETE.search(blob) and (context or PERSONAL_APPLICATION.search(blob)):
+        return ev(company, "Role not named" if role == "Application" else role, "C", "Application not completed (reminder).", "email")
+    reject = REJECT.search(snippet)
+    if reject and RECEIPT_SUBJECT.search(subject) and not REJECT_STRONG.search(snippet):
+        reject = None  # a confirmation mail that only says "unfortunately we cannot answer everyone"
+    if context and reject:
         return ev(company, role, "R", "Rejection email.", "email", True)
     if context and INTERVIEW.search(blob) and not CONDITIONAL_INVITE.search(blob):
         return ev(company, role, "S", "Interview or next-step invite.", "email", True)
@@ -406,6 +483,17 @@ def _group(evs: list[Event]) -> list[tuple[str, list[Event]]]:
 def build_applications(events: list[Event], now: datetime | None = None) -> list[dict]:
     """Group events per company (per role for StepStone, which hides the company)."""
     now = now or datetime.now(UTC)
+    # a mail whose company is only a guess (a person's name) joins the one company that has the same role
+    strong: dict[str, dict[str, str]] = {}
+    for e in events:
+        if not e.weak and e.role.lower() not in GENERIC_ROLES:
+            strong.setdefault(_rolekey(e.role), {})[_norm(e.company)] = e.company
+    for e in events:
+        if e.weak and e.role.lower() not in GENERIC_ROLES:
+            k = _rolekey(e.role)
+            found = {ck: nm for rk, d in strong.items() if rk == k or (min(len(rk), len(k)) >= 6 and (rk in k or k in rk)) for ck, nm in d.items()}
+            if len(found) == 1:
+                e.company = next(iter(found.values()))
     by_company: dict[str, list[Event]] = {}
     for e in events:
         k = _norm(e.company)
@@ -429,7 +517,9 @@ def build_applications(events: list[Event], now: datetime | None = None) -> list
         for e in evs:
             if e.status == "C" and status:
                 continue
-            if e.status == "A" and status in ("R", "I"):
+            if e.status == "A" and "viewed" in e.note and status:
+                pass  # "viewed" is no decision and never reopens a closed application
+            elif e.status == "A" and status in ("R", "I"):
                 status = "A"  # applied again later
             elif e.status == "A" and status in ("U", "S"):
                 pass

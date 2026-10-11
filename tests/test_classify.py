@@ -19,7 +19,7 @@ def test_linkedin_rejection_template():
 
 def test_linkedin_sent_and_viewed():
     assert classify_message(m("jobs-noreply@linkedin.com", "Spoorthi, your application was sent to PRIOjet GmbH")).status == "A"
-    assert classify_message(m("jobs-noreply@linkedin.com", "Your application was viewed by BoWatt")).status == "U"
+    assert classify_message(m("jobs-noreply@linkedin.com", "Your application was viewed by BoWatt")).status == "A"
 
 
 def test_indeed_rejection_vs_open():
@@ -69,7 +69,7 @@ def test_stepstone_templates():
     sent = classify_message(m("StepStone <info@email.stepstone.de>", "Spoorthi, your application for FullStack Developer (m/f/d) has been sent"))
     assert (sent.status, sent.company) == ("A", "Via StepStone")
     viewed = classify_message(m("info@email.stepstone.de", "Ihre Bewerbung bei TorAlarm GmbH wurde angesehen"))
-    assert (viewed.status, viewed.company) == ("U", "TorAlarm GmbH")
+    assert (viewed.status, viewed.company) == ("A", "TorAlarm GmbH")
     news = classify_message(
         m("info@email.stepstone.de", "Spoorthi, there's news about your application for Web Frontend Developer (m/w/d)", "KM2 has processed your application")
     )
@@ -365,3 +365,127 @@ def test_real_interview_invitation_still_selected():
         )
     )
     assert e.status == "S"
+
+
+# ---- real mail templates found by comparing the app with the hand-checked list ----
+def test_move_forward_with_another_candidate_is_rejection():
+    e = classify_message(
+        m(
+            "recruitment@mayerfeld.consulting",
+            "Update regarding your Associate Frontend Developer application",
+            "Thank you for taking the time to reply. After reviewing the full pool of applicants, we've decided to move forward with another candidate for this position.",
+        )
+    )
+    assert e.status == "R"
+
+
+def test_will_not_move_you_forward_is_rejection():
+    e = classify_message(
+        m(
+            "tctranscontinental+autoreply@talent.icims.com",
+            "Thank you from Transcontinental Inc.",
+            "Thank you for your interest in the Front End Developer position. After careful review of your application, we've decided that we will not move you forward",
+        )
+    )
+    assert e.status == "R"
+
+
+def test_confirmation_that_explains_rejection_is_still_a_receipt():
+    e = classify_message(
+        m(
+            "sandvik@myworkday.com",
+            "Thank you for submitting your application for Frontend Software Engineer",
+            "Hello! Thank you for applying for a position with us, this is a confirmation that we received your application. Unfortunately we cannot answer everyone personally.",
+        )
+    )
+    assert e.status == "A"
+
+
+def test_incomplete_application_reminder_is_not_a_rejection():
+    e = classify_message(
+        m(
+            "noreply@sopea-hr.com",
+            "Ihre Bewerbung als Softwareentwickler (m/w/d) vom 15.05.2026 bei Espera-Werke GmbH",
+            "Sie haben sich bei uns online beworben. Leider haben Sie die Eingabe Ihrer Bewerbungsdaten noch nicht vollständig abgeschlossen.",
+        )
+    )
+    assert e.status == "C"
+
+
+def test_indeed_apply_receipt_names_the_role():
+    e = classify_message(m("indeedapply@indeed.com", "Bewerbung über Indeed: Personalberater Pädagogik (m/w/d)", "We'll help you get started"))
+    assert (e.status, e.role, e.company) == ("A", "Personalberater Pädagogik (m/w/d)", "Via Indeed")
+
+
+def test_amazon_roles_are_kept_apart_and_status_update_is_read():
+    a = classify_message(
+        m(
+            "noreply@mail.amazon.jobs",
+            "Bewerbung bei Amazon: Status-Update",
+            "Vielen Dank für Ihre Bewerbung auf die Stelle als Software Development Engineer, Fire TV (ID: 10417193). Nach sorgfältiger Prüfung Ihrer Bewerbung haben wir uns dagegen entschieden.",
+            date="2026-08-14",
+            id="1",
+        )
+    )
+    assert (a.company, a.role, a.status) == ("Amazon", "Software Development Engineer, Fire TV", "R")
+    b = classify_message(
+        m(
+            "noreply@mail.amazon.jobs",
+            "Follow-up: Amazon möchte ein Vorstellungsgespräch mit dir führen!",
+            "Stelle als Software Development Engineer, AWS Security (ID: 10420668)",
+            date="2026-08-01",
+            id="2",
+        )
+    )
+    assert (b.role, b.status) == ("Software Development Engineer, AWS Security", "S")
+    rows = build_applications([a, b], NOW)
+    assert sorted(r["status"] for r in rows) == ["N", "R"]
+
+
+def test_dhl_mails_become_separate_applications():
+    evs = [
+        classify_message(m("DHL Recruiting - DO NOT REPLY! <noreply@dhl.com>", f"Ihre Bewerbung: {role} ID {i} bei DHL Group", "Leider", date=d, id=str(i)))
+        for i, role, d in [(322474, "IT Solutions Architect (m/w/d)", "2026-09-04"), (322543, "IT Projektmanager (m/w/d)", "2026-07-06")]
+    ]
+    rows = build_applications(evs, NOW)
+    assert len(rows) == 2 and {r["company"] for r in rows} == {"DHL"}
+
+
+def test_person_sender_joins_the_company_with_same_role():
+    a = classify_message(
+        m(
+            "ITERGO <hr@itergo.com>",
+            "Wir haben Ihre Bewerbung auf die Stellenausschreibung Software Engineer (m/w/d) ERGO02319 erhalten",
+            date="2026-05-10",
+            id="1",
+        )
+    )
+    b = classify_message(
+        m(
+            "Michael Hepe <no-reply@x.recruitmail.com>",
+            "Ihre Bewerbung auf die Stellenausschreibung: Software Engineer (m/w/d)",
+            "Leider müssen wir Ihnen absagen",
+            date="2026-09-08",
+            id="2",
+        )
+    )
+    rows = build_applications([a, b], NOW)
+    assert len(rows) == 1 and rows[0]["status"] == "R"
+
+
+def test_company_cleanup_from_sender_names():
+    e = classify_message(
+        m("Winnie Cai - Everyman Health <w@everyman.com>", "Reply on your job application", "Unfortunately we will not be moving forward with your application")
+    )
+    assert e.company == "Everyman Health"
+    e = classify_message(
+        m("noreply@join.com", "We received your application for a position at Airteam Aerial Intelligence GmbH", "Thank you for applying for this position.")
+    )
+    assert e.company == "Airteam Aerial Intelligence GmbH"
+    e = classify_message(m("Andre, Elke <e@fom.de>", "FOM - Ihre Bewerbung für die Position Core Systems Engineer (m/w/d)", "Leider müssen wir absagen"))
+    assert e.company == "FOM"
+
+
+def test_not_a_job_mail():
+    assert classify_message(m("No-reply-esta5@cbp.dhs.gov", "ESTA Application Number", "Your ESTA application")) is None
+    assert classify_message(m("Matt Hazim <m@x.com>", "Your AI Clipping Agency application — here's what's next", "application")) is None
