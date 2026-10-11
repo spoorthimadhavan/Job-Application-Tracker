@@ -243,3 +243,50 @@ def test_company_named_sender_kept():
         m("Athletic Sport Sponsoring <ass-jobs@m.personio.de>", "Deine Bewerbung als Fullstack Developer (m/w/d)", "vielen Dank für deine Bewerbung")
     )
     assert e.company == "Athletic Sport Sponsoring"
+
+
+def test_aldi_receipt_and_rejection_merge():
+    rcpt = {
+        **m(
+            "noreply@aldi-nord.de",
+            "Eingangsbestätigung: Deine Bewerbung auf die Stelle - Software Engineer – Data Platforms (m/w/d)",
+            "Hallo, vielen Dank für deine Bewerbung auf die Stelle &quot;Software Engineer – Data Platforms (m/w/d)&quot; und dein Interesse, deine Power bei ALDI Nord einzubringen.",
+            id="1",
+        ),
+        "date": "2026-09-12",
+    }
+    rej = {
+        **m(
+            "noreply@aldi-nord.de",
+            "Deine Bewerbung auf die Stelle Software Engineer – Data Platforms (m/w/d)",
+            "nochmals vielen Dank für deine Bewerbung und dein Interesse, deine Power bei ALDI Nord einzubringen. Nach eingehender Prüfung deiner Unterlagen müssen wir dir leider mitteilen,",
+            id="2",
+        ),
+        "date": "2026-10-08",
+    }
+    rows = build_applications([classify_message(rcpt), classify_message(rej)], NOW)
+    assert len(rows) == 1 and rows[0]["status"] == "R" and rows[0]["role"] == "Software Engineer – Data Platforms (m/w/d)"
+    assert "&quot;" not in rows[0]["preview"]
+
+
+def test_oh_so_company_variants_merge():
+    a = {
+        **m(
+            "OH-SO Digital <talent@oh-so.com>",
+            "OH-SO - Thank you for your application // OH-SO Vielen Dank für Deine Bewerbung",
+            "Thank you so much for your application. Your application documents have been received",
+            id="1",
+        ),
+        "date": "2026-09-12",
+    }
+    b = {
+        **m(
+            "talent@oh-so.com",
+            "OH-SO - Feedback on your application",
+            "After careful consideration of your application, we regret to inform you that we have chosen other candidates",
+            id="2",
+        ),
+        "date": "2026-10-02",
+    }
+    rows = build_applications([classify_message(a), classify_message(b)], NOW)
+    assert len(rows) == 1 and rows[0]["status"] == "R"

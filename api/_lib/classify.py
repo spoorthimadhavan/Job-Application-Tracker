@@ -121,7 +121,16 @@ ROLE_PATTERNS = (
 )
 
 
+SUBJECT_ROLE_PATTERNS = (
+    r"(?:auf )?die stelle[\s\-:–]*[\"„“]?(.+?)[\"“”]?\s*$",
+    r"bewerbung (?:auf|für) (?:die |den )?(?:position|stelle)?[\s\-:–]*[\"„“]?(.+?)[\"“”]?\s*$",
+)
+
+
 def _role(subject: str, snippet: str = "") -> str:
+    for pat in SUBJECT_ROLE_PATTERNS:
+        if (x := re.search(pat, subject, re.I)) and 2 < len(r := x[1].strip(' .,:;-"')) <= 90:
+            return r
     # specific patterns first, across both texts, so "Danke für dein Interesse" in a subject never beats the role in the body
     for pat in ROLE_PATTERNS:
         for text in (subject, snippet):
@@ -223,7 +232,7 @@ def classify_message(m: dict) -> Event | None:
     low = sender.lower()
     mid, day = m.get("id", ""), _day(m)
 
-    preview = m.get("preview") or snippet
+    preview = _clean(m.get("preview")) or snippet
 
     def ev(company, role, status, note, source, check=False):
         return Event(company.strip(" ."), role.strip(), status, day, note, check, mid, source, subject, _sender_display(sender), preview[:240])
@@ -340,7 +349,14 @@ def build_applications(events: list[Event], now: datetime | None = None) -> list
     now = now or datetime.now(UTC)
     by_company: dict[str, list[Event]] = {}
     for e in events:
-        by_company.setdefault(_norm(e.company), []).append(e)
+        k = _norm(e.company)
+        # "OH-SO" and "OH-SO Digital" are the same employer: a key that starts another (4+ chars) joins it
+        same = next((x for x in by_company if x != k and min(len(x), len(k)) >= 4 and (x.startswith(k) or k.startswith(x))), None)
+        if same and len(k) < len(same):
+            by_company[k] = by_company.pop(same)
+        elif same:
+            k = same
+        by_company.setdefault(k, []).append(e)
     groups: list[tuple[str, list[Event]]] = []
     for ckey, cevs in by_company.items():
         for rk, evs in _group(cevs):
