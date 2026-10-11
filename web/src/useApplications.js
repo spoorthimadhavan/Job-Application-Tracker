@@ -43,7 +43,11 @@ export function useApplications(enabled, since, onSignedOut, email) {
       } else retries.current = 0;
     } catch (e) {
       if (e.status === 401) onSignedOut();
-      else setError("Could not reach your mailbox. Showing the last result.");
+      else {
+        setError("Could not reach your mailbox. Showing the last result.");
+        // never leave the page "reading" after a failure: show what we have, the next 30 s refresh tries again
+        setData((d) => (d && d.partial ? { ...d, partial: false, skipped: true } : d));
+      }
     } finally {
       if (running.current === since) running.current = "";
     }
