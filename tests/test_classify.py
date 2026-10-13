@@ -670,3 +670,27 @@ def test_polite_acknowledgement_titled_ihre_bewerbung_is_applied():
         )
     )
     assert e and e.status == "A" and e.company.lower().startswith("betzemeier")
+
+
+def test_german_recruiter_call_invite_is_selected():
+    e = classify_message(
+        m(
+            "cornelia.hoesler@victoria-consulting.de",
+            "CH/TEAMS-Interview Frau Madhavan als SW Entwickler Monitoring-Software Erlangen",
+            "Hallo Frau Madhavan, wie soeben telefonisch kurz abgestimmt, freue ich mich auf den Kennenlern-Call mit Ihnen am Mittwoch, 14.10.2026 um 14 Uhr und Sie erhalten nachfolgend den entsprechenden TEAMS-",
+            date="2026-10-13",
+        )
+    )
+    assert e and e.status == "S"
+
+
+def test_successfactors_confirmation_reads_role_from_quoted_subject():
+    e = classify_message(
+        m(
+            "system@successfactors.com",
+            'Ihre Bewerbung auf die Stelle als "Fachinformatiker (m/w/d) Schwerpunkt Softwaretest"',
+            "Eingangsbestätigung Sehr geehrte/r Spoorthi, wir danken Ihnen für die Zusendung Ihrer Bewerbung",
+        )
+    )
+    assert e.status == "A" and e.role == "Fachinformatiker (m/w/d) Schwerpunkt Softwaretest"
+    assert classify_message(m("system@successfactors.com", "KNDS-Group: Anlage Ihres Bewerberkontos", "Willkommen bei KNDS, Ihre Registrierung")).status == "C"

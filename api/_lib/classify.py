@@ -45,7 +45,11 @@ INTERVIEW = re.compile(
     r"(invite|inviting|invitation).{0,40}(interview|call|chat|assessment)|"
     r"(schedule|book|arrange).{0,30}interview|interview (invitation|invite|request|slot|appointment)|"
     r"technical (assessment|interview)|coding (challenge|test)|take-home|terminvorschlag|"
-    r"nächsten schritt.{0,40}(gespräch|call|interview)",
+    r"nächsten schritt.{0,40}(gespräch|call|interview)|"
+    r"\b(teams|zoom|video|telefon|online)[- ]?interview|kennenlern[- ]?(call|gespräch|termin|runde|telefonat)|"
+    r"(erst|zweit|dritt)(es|en)? ?gespräch|vorstellungstermin|persönliche[sn]? kennenlernen|"
+    r"freue mich auf (das|den|unser\w*|ein\w*).{0,40}(gespräch|call|interview|telefonat|termin)|"
+    r"(einladung|link|termin\w*).{0,30}(teams|zoom|google meet)|(teams|zoom|google meet).{0,30}(einladung|link|termin)",
     re.I,
 )
 RECEIPT = re.compile(
@@ -70,7 +74,7 @@ OFFER_STRONG = re.compile(  # personal offer wording only: marketing mails talk 
 BEWERBUNG_SUBJECT = re.compile(
     r"^(re:\s*)?(ihre|deine|your) (bewerbung|application)\b", re.I
 )  # a mail titled "Ihre Bewerbung als ..." is at least an acknowledgement
-ACCOUNT = re.compile(r"account (wurde )?(erfolgreich )?(erstellt|created)|one-time passcode|konto.*erstellt", re.I)
+ACCOUNT = re.compile(r"account (wurde )?(erfolgreich )?(erstellt|created)|one-time passcode|konto.*erstellt|anlage ihres bewerberkontos|bewerberkonto", re.I)
 NOISE = re.compile(
     r"bootcamp|download curriculum|industry-ready|masterclass|webinar|"
     r"looking for candidates|job opportunities|is hiring|new jobs|job alert|newsletter|"
@@ -114,7 +118,7 @@ APPLICATION_CONTEXT = re.compile(
 
 
 # Bump when the rules change: browsers keep classified mail and drop it when this differs.
-RULES_VERSION = "2026-10-11j"
+RULES_VERSION = "2026-10-13a"
 
 
 @dataclass
@@ -176,6 +180,7 @@ JUNK_ROLE = re.compile(
 
 
 SUBJECT_ROLE_PATTERNS = (
+    r"stelle als[\s\-:–]*[\"„“]?(.+?)[\"“”]?\s*$",
     r"stellenausschreibung[\s\-:–]*[\"„“]?(.+?)[\"“”]?(?:\s+[A-Z]{2,}\d{3,})?(?:\s+erhalten)?\s*$",
     r"(?:auf )?die stelle[\s\-:–]*[\"„“]?(.+?)[\"“”]?\s*$",
     r"bewerbung (?:auf|für) (?:die |den )?(?:position|stelle)?[\s\-:–]*[\"„“]?(.+?)[\"“”]?\s*$",
@@ -206,7 +211,7 @@ def _day(m: dict) -> str:
 
 
 GENERIC = re.compile(
-    r"\b(no.?reply|do.?not.?reply|jobs?|talent|career site|careers?|recruit(ing|ment|er)?|hr|team|karriere|bewerbung(en)?|notifications?)\b", re.I
+    r"\b(no.?reply|do.?not.?reply|jobs?|talent|career site|careers?|recruit(ing|ment|er)?|hr|team|karriere|bewerbung(en)?|notifications?|system)\b", re.I
 )
 ATS = {
     "personio",
