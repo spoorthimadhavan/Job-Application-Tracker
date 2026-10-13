@@ -118,7 +118,7 @@ APPLICATION_CONTEXT = re.compile(
 
 
 # Bump when the rules change: browsers keep classified mail and drop it when this differs.
-RULES_VERSION = "2026-10-13a"
+RULES_VERSION = "2026-10-13b"
 
 
 @dataclass
@@ -297,6 +297,8 @@ def _domain_company(dom: str) -> str:
 
 def _company_from_text(text: str) -> str:
     for pat in (
+        r"(?:©|\(c\))\s*(?:\d{4}\s+)?([A-ZÄÖÜ][\w&.\-]+(?: [A-ZÄÖÜ][\w&.\-]+){0,2})\.?\s+(?:Alle Rechte|All rights)",  # mail footer
+        r"Human Resources\s+([A-ZÄÖÜ][\w&.\-]+(?: [A-ZÄÖÜ&][\w&.\-]*){0,4})",  # signature block
         r"(?:position|role|stelle)\b.{0,80}?\b(?:at|bei(?: der| dem)?)\s+([A-Z][\w&.\- ]{1,40}?)(?:[.,!]|\s+(?:We|Wir|and|und)\b|$)",
         r"interest in ([A-Z][\w&.\-]+)!",
         r"(?i:bewerbung|interesse)\s+(?:bei|für|an)\s+(?:der |dem )?([A-ZÄÖÜ][\w&.\-]+(?: [A-ZÄÖÜ][\w&.\-]+)?)(?=[\s.,!]|$)",
@@ -493,6 +495,8 @@ def needs_body(m: dict) -> bool:
     if NOISE_SENDER.search(sender) or NOISE.search(subject) or NOISE_SUBJECT.search(subject) or EDU_SENDER.search(sender) or EDU.search(blob):
         return False
     ev = classify_message(m)
+    if ev and ev.weak and ev.status in ("A", "U", "C"):
+        return True  # the company is only a guess (a platform): the footer of the mail names it
     if ev and ev.status not in ("A", "U"):
         return False
     if ev and ev.source == "email" and PLAIN_CONFIRMATION.search(blob):

@@ -694,3 +694,13 @@ def test_successfactors_confirmation_reads_role_from_quoted_subject():
     )
     assert e.status == "A" and e.role == "Fachinformatiker (m/w/d) Schwerpunkt Softwaretest"
     assert classify_message(m("system@successfactors.com", "KNDS-Group: Anlage Ihres Bewerberkontos", "Willkommen bei KNDS, Ihre Registrierung")).status == "C"
+
+
+def test_platform_mail_reads_the_employer_from_the_footer():
+    subject = 'Ihre Bewerbung auf die Stelle als "Fachinformatiker (m/w/d) Schwerpunkt Softwaretest"'
+    preview = "Eingangsbestätigung Sehr geehrte/r Spoorthi, wir danken Ihnen für die Zusendung Ihrer Bewerbung"
+    first = m("system@successfactors.com", subject, preview)
+    assert needs_body(first)  # the platform name is only a guess: read the full text
+    body = preview + " Mit freundlichen Grüßen Human Resources KNDS Deutschland GmbH & Co. KG © KNDS Deutschland. Alle Rechte vorbehalten."
+    e = classify_message(m("system@successfactors.com", subject, body))
+    assert e.company.startswith("KNDS") and not e.weak
