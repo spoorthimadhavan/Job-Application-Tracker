@@ -47,7 +47,7 @@ export default function App() {
   // switching between 1, 3 or 6 months is instant and every status is worked out from the same mail.
   const sixMonths = sinceFor("6m");
   const loadSince = since < sixMonths ? since : sixMonths;
-  const { data, error } = useApplications(signedIn, loadSince, onSignedOut, me && me.email);
+  const { data, error, checkedAt, refresh } = useApplications(signedIn, loadSince, onSignedOut, me && me.email);
   const merged = useMemo(
     () => applyOverrides((data ? data.applications : []).filter((a) => a.date >= since), overrides),
     [data, overrides, since]
@@ -71,7 +71,8 @@ export default function App() {
       <TopBar
         email={me.email}
         demo={me.demo}
-        updatedAt={data && data.updated_at}
+        updatedAt={checkedAt || (data && data.updated_at)}
+        onRefresh={refresh}
         since={data && since}
         onLogout={() => logout().then(() => setMe({ ...me, email: null }))}
       />

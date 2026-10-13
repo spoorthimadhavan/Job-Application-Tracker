@@ -8,6 +8,7 @@ const POLL_MS = 30000;
 export function useApplications(enabled, since, onSignedOut, email) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [checkedAt, setCheckedAt] = useState(null);
   const timer = useRef();
   const latest = useRef(since);
   const running = useRef("");
@@ -30,6 +31,7 @@ export function useApplications(enabled, since, onSignedOut, email) {
       if (latest.current !== since) return;
       setData(d);
       setError("");
+      setCheckedAt(Date.now() / 1000);
       // Gmail kept refusing some mail: try again shortly, it carries on where it stopped
       if (d.partial && retries.current < 8) {
         retries.current += 1;
@@ -66,5 +68,12 @@ export function useApplications(enabled, since, onSignedOut, email) {
     };
   }, [enabled, load]);
 
-  return { data, error };
+  // "Refresh now": drop a stuck read and check the mailbox again straight away
+  const refresh = useCallback(() => {
+    running.current = "";
+    retries.current = 0;
+    load();
+  }, [load]);
+
+  return { data, error, checkedAt, refresh };
 }

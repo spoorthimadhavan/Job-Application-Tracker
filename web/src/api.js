@@ -17,7 +17,15 @@ function demoRequest(path) {
 
 async function request(path, options) {
   if (import.meta.env.VITE_DEMO) return demoRequest(path);
-  const res = await fetch(path, { credentials: "same-origin", ...options });
+  // a request that never answers must not freeze the live refresh for good
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 25000);
+  let res;
+  try {
+    res = await fetch(path, { credentials: "same-origin", signal: ctl.signal, ...options });
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     const err = new Error(res.status === 401 ? "signed-out" : `Request failed (${res.status})`);
     err.status = res.status;
