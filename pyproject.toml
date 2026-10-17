@@ -5,8 +5,8 @@ description = "Live job application tracker: reads Gmail and shows the status of
 requires-python = ">=3.12"
 # Keep in sync with requirements.txt (Vercel installs from here, Docker and CI from requirements*.txt)
 dependencies = [
-    "fastapi==0.115.6",
-    "httpx==0.27.2",
+    "fastapi==0.143.0",
+    "httpx==0.28.1",
     "cryptography==43.0.3",
 ]
 
