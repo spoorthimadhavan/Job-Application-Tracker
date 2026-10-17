@@ -9,7 +9,7 @@ COPY web/ ./
 RUN npm run build
 
 # ---- 2. runtime: FastAPI serving the API and the built app
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 WEB_DIST=/app/web/dist
 WORKDIR /app
 COPY requirements.txt .
